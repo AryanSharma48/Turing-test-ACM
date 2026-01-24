@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real vs AI Challenge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Russo+One&display=swap');
+      
+      :root {
+        --color-bg: #13111C;
+        --color-card: #1F1B2E;
+        --color-accent: #FF00E6;
+        --color-success: #00FF9D;
+        --color-error: #FF2E2E;
+        --color-text: #FFFFFF;
+      }
+
+      body {
+        font-family: 'Chakra Petch', sans-serif;
+        background-color: var(--color-bg);
+        background-image: 
+          linear-gradient(rgba(19, 17, 28, 0.9), rgba(19, 17, 28, 0.9)),
+          url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%232A2440' fill-opacity='0.4' fill-rule='evenodd'%3E%3Cpath d='M0 40L40 0H20L0 20M40 40V20L20 40'/%3E%3C/g%3E%3C/svg%3E");
+        color: var(--color-text);
+      }
+
+      h1, h2, h3, .font-heading {
+        font-family: 'Russo One', sans-serif;
+      }
+
+      .game-card {
+        background-color: var(--color-card);
+        border: 4px solid #000;
+        box-shadow: 8px 8px 0px 0px rgba(0,0,0,0.5);
+      }
+
+      .game-btn {
+        transition: all 0.1s;
+        border: 3px solid #000;
+        box-shadow: 4px 4px 0px 0px #000;
+      }
+
+      .game-btn:active {
+        transform: translate(2px, 2px);
+        box-shadow: 2px 2px 0px 0px #000;
+      }
+
+      .game-btn:disabled {
+        transform: none;
+        box-shadow: none;
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .retro-text-shadow {
+        text-shadow: 3px 3px 0px #000;
+      }
+      
+      /* CRT Scanline effect overlay (subtle) */
+      .crt::before {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+        z-index: 2;
+        background-size: 100% 2px, 3px 100%;
+        pointer-events: none;
+      }
+
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 12px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #000;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #333;
+        border: 2px solid #000;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #555;
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "react": "https://esm.sh/react@^19.2.3",
+        "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+      }
+    }
+    </script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="src/index.tsx"></script>
+</body>
+</html>

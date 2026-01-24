@@ -1,0 +1,5 @@
+{
+  "name": "Turing Test: Design vs AI",
+  "description": "A visual challenge game where users must distinguish between 'funky game design' images and AI-generated approximations.",
+  "requestFramePermissions": []
+}
