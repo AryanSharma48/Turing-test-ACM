@@ -20,7 +20,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ progress }) => {
         
         <div className="space-y-4">
           <h2 className="text-4xl font-heading text-white tracking-wider retro-text-shadow uppercase transform -skew-x-6">
-            Generating Level
+            Loading Level
           </h2>
           <div className="inline-block bg-black px-4 py-1 transform skew-x-12">
              <p className="text-[#00FF9D] font-mono text-sm uppercase tracking-widest transform -skew-x-12">

@@ -1,21 +1,26 @@
 import { GameRound, GameImage } from "../../types";
+import childrenAI from "../images/childrenAI.jpeg";
+import childrenREAL from "../images/childrenREAL.jpeg";
+import trainAI from "../images/trainAI.jpeg";
+import trainREAL from "../images/trainREAL.jpeg";
+
 
 // Static Data Source - Replace URLs with your actual image paths later
 // type: 'DESIGN' = Real/Human
 // type: 'AI' = Artificial
 const STATIC_DATA = [
   {
-    subject: "Cyberpunk Street Samurai",
+    subject: "Happy Children Playing",
     images: [
-      { url: "https://picsum.photos/seed/cyber1/800/800", type: 'DESIGN' },
-      { url: "https://picsum.photos/seed/cyber2/800/800", type: 'AI' }
+      { url: childrenREAL, type: 'DESIGN' },
+      { url: childrenAI, type: 'AI' }
     ]
   },
   {
-    subject: "Retro Pixel Art Castle",
+    subject: "Real Train or Not",
     images: [
-      { url: "https://picsum.photos/seed/pixel1/800/800", type: 'DESIGN' },
-      { url: "https://picsum.photos/seed/pixel2/800/800", type: 'AI' }
+      { url: trainREAL, type: 'DESIGN' },
+      { url: trainAI, type: 'AI' }
     ]
   },
   {

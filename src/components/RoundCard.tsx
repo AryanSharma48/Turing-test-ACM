@@ -83,7 +83,7 @@ export const RoundCard: React.FC<RoundCardProps> = ({ round, onSelect }) => {
                             ${image.type === 'AI' ? 'bg-[#00FF9D] text-black' : 'bg-[#FF00E6] text-white'}
                          `}>
                             {image.type === 'AI' ? <Bot size={28} /> : <Paintbrush2 size={28} />}
-                            {image.type === 'AI' ? 'AI Generated' : 'Human Design'}
+                            {image.type === 'AI' ? 'AI Generated' : 'Real Photograph'}
                          </div>
                          
                          {isSelected && (
@@ -120,7 +120,7 @@ export const RoundCard: React.FC<RoundCardProps> = ({ round, onSelect }) => {
         {hasSelected && (
            <div className={`p-4 text-center border-t-4 border-black ${round.isCorrect ? 'bg-[#00FF9D]/20' : 'bg-[#FF2E2E]/20'}`}>
               <h4 className={`font-heading text-xl uppercase ${round.isCorrect ? 'text-[#00FF9D]' : 'text-[#FF2E2E]'}`}>
-                 {round.isCorrect ? ">> TARGET IDENTIFIED SUCCESSFULLY <<" : ">> ERROR: HUMAN ART DETECTED <<"}
+                 {round.isCorrect ? ">> TARGET IDENTIFIED SUCCESSFULLY <<" : ">> ERROR: HUMAN PHOTOGRAPH DETECTED <<"}
               </h4>
            </div>
         )}

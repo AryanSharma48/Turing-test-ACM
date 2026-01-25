@@ -102,56 +102,83 @@ export default function App() {
     return <LoadingScreen progress={gameState.loadingProgress} />;
   }
 
-  if (gameState.status === 'FINISHED') {
+if (gameState.status === 'FINISHED') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-[#13111C]">
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden bg-[#13111C]">
         
-        <div className="game-card w-full max-w-2xl p-8 md:p-12 text-center relative z-10 animate-in zoom-in duration-300">
+        {/* Decorative Background Elements (Same as Landing) */}
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#FF00E6] rounded-full mix-blend-multiply filter blur-[150px] opacity-10 animate-pulse"></div>
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[#00FF9D] rounded-full mix-blend-multiply filter blur-[150px] opacity-10 animate-pulse" style={{animationDelay: '1s'}}></div>
+        
+        {/* Main Content Container - Centered & Open */}
+        <div className="relative z-10 flex flex-col items-center w-full max-w-4xl animate-in zoom-in duration-300">
            
-           <div className="absolute -top-12 left-1/2 transform -translate-x-1/2">
-             <div className="bg-yellow-400 p-6 rounded-full border-4 border-black shadow-[0px_10px_0px_rgba(0,0,0,0.3)]">
-                <Trophy className="w-16 h-16 text-black" strokeWidth={2.5} />
+           {/* "Sticker" Header Tag */}
+           <div className="mb-10 transform -rotate-1">
+             <div className="bg-[#00FF9D] text-black border-2 border-[#00FF9D] px-6 py-2 font-mono text-sm font-bold uppercase tracking-widest shadow-[6px_6px_0px_rgba(0,0,0,1)]">
+                // SYSTEM DIAGNOSTIC COMPLETE
              </div>
            </div>
 
-           <div className="mt-12 space-y-4">
-              <h2 className="text-2xl font-bold uppercase text-gray-400 tracking-widest">Mission Complete</h2>
-              <h1 className="text-6xl md:text-8xl font-heading text-white retro-text-shadow">
-                {gameState.score} / 5
+           {/* Huge Score Display */}
+           <div className="text-center mb-6">
+              <h1 className="text-[120px] md:text-[180px] font-heading leading-none text-white retro-text-shadow select-none">
+                {gameState.score}<span className="text-[#FF00E6] text-[0.8em]">/</span>5
               </h1>
            </div>
            
-           <p className="text-2xl font-bold text-[#00FF9D] mt-4 mb-8 uppercase tracking-wide">
-             {gameState.score === 5 ? ">> GODLIKE DETECTION <<" :
-              gameState.score >= 3 ? ">> SKILLED OPERATOR <<" :
-              ">> SYSTEM COMPROMISED <<"}
-           </p>
+           {/* Verdict Text */}
+           <div className="mb-16 text-center">
+              <p className={`text-2xl md:text-3xl font-heading uppercase tracking-[0.2em] 
+                ${gameState.score >= 4 ? 'text-[#00FF9D]' : gameState.score >= 3 ? 'text-yellow-400' : 'text-[#FF00E6]'}`}>
+                {gameState.score === 5 ? ">> GODLIKE ACCURACY <<" :
+                 gameState.score === 4 ? ">> HIGHLY PROFICIENT <<" :
+                 gameState.score === 3 ? ">> ACCEPTABLE MARGIN <<" :
+                 ">> SYSTEM COMPROMISED <<"}
+              </p>
+           </div>
 
-           <div className="grid gap-3 mb-12 text-left">
-             {gameState.rounds.map(round => (
-                <div key={round.id} className="flex items-center justify-between p-3 bg-black/40 border-l-4 border-gray-700 hover:bg-black/60 transition-colors">
-                   <span className="text-gray-300 font-mono text-sm uppercase">Lvl {round.id}: {round.subject}</span>
-                   <span className={`font-bold uppercase text-sm px-2 py-1 ${round.isCorrect ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>
-                     {round.isCorrect ? 'SUCCESS' : 'FAILED'}
-                   </span>
+           {/* Visual History Bar */}
+           <div className="flex gap-4 md:gap-6 mb-16">
+             {gameState.rounds.map((round, idx) => (
+                <div key={round.id} className="flex flex-col items-center gap-3 group">
+                  <div className={`
+                    w-12 h-12 md:w-16 md:h-16 flex items-center justify-center border-4 
+                    transition-all duration-300 transform group-hover:scale-110 shadow-[4px_4px_0px_rgba(0,0,0,0.5)]
+                    ${round.isCorrect 
+                      ? 'bg-[#00FF9D] border-black text-black' 
+                      : 'bg-[#1F1B2E] border-[#FF00E6] text-[#FF00E6]'}
+                  `}>
+                    {round.isCorrect ? (
+                      <Zap size={32} strokeWidth={2.5} className="fill-current" />
+                    ) : (
+                      <span className="font-mono text-3xl font-bold">X</span>
+                    )}
+                  </div>
+                  <span className="text-[10px] md:text-xs text-gray-500 font-mono uppercase tracking-widest">
+                    R0{idx + 1}
+                  </span>
                 </div>
              ))}
            </div>
 
-           <div className="flex flex-col gap-4">
-             <button 
-               onClick={resetGame}
-               className="w-full game-btn bg-[#00FF9D] text-black font-heading text-2xl py-4 hover:bg-[#00e68d] flex items-center justify-center gap-3 uppercase tracking-wider"
-             >
-               <RotateCcw size={28} />
-               Reboot System
-             </button>
+           {/* Big Pink Reboot Button (Matches Landing "Initialize") */}
+           <button 
+             onClick={resetGame}
+             className="group relative inline-flex items-center gap-4 px-12 py-6 bg-[#FF00E6] text-white font-heading text-2xl uppercase tracking-widest hover:bg-[#d900c4] hover:scale-105 transition-all duration-300 shadow-[0_0_30px_rgba(255,0,230,0.3)]"
+           >
+             <RotateCcw className="w-8 h-8 group-hover:-rotate-180 transition-transform duration-700" />
+             <span>Reboot System</span>
+             <ArrowRight className="w-8 h-8 group-hover:translate-x-2 transition-transform" />
+           </button>
+
+           <div className="mt-12 text-gray-600 font-mono text-[10px] uppercase tracking-[0.3em] animate-pulse">
+              End of Line_
            </div>
         </div>
       </div>
     );
   }
-
   if (gameState.status === 'IDLE') {
     return (
       <div className="min-h-screen flex flex-col relative overflow-hidden">
@@ -163,7 +190,7 @@ export default function App() {
           
           <div className="mb-8 transform -rotate-2">
             <span className="bg-black text-[#00FF9D] border-2 border-[#00FF9D] px-4 py-2 font-mono text-sm uppercase tracking-widest shadow-[4px_4px_0px_#00FF9D]">
-              v 2.5.0 // ACM SigAI Chapter
+              v 1.1.0 // ACM SigAI Chapter
             </span>
           </div>
           
@@ -202,11 +229,17 @@ export default function App() {
 
   // PLAYING STATE
   return (
-    <div className="min-h-screen crt text-white custom-scrollbar flex flex-col">
+    <div className="min-h-screen text-white custom-scrollbar flex flex-col">
       {/* HUD Header */}
       <header className="sticky top-0 z-50 bg-[#13111C]/95 border-b-4 border-black px-4 py-3 shadow-[0px_4px_20px_rgba(0,0,0,0.5)]">
         <div className="container mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-2">
+          
+          {/* UPDATED LOGO SECTION */}
+          <div 
+            onClick={resetGame} 
+            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+            title="Return to Home"
+          >
              <div className="bg-[#FF00E6] w-8 h-8 flex items-center justify-center border-2 border-black font-bold text-sm">R</div>
              <div className="hidden sm:block">
                <span className="font-heading text-xl tracking-tighter">REAL<span className="text-[#00FF9D]">VS</span>AI</span>
@@ -220,7 +253,7 @@ export default function App() {
                 <span className="font-heading text-2xl text-[#00FF9D] leading-none retro-text-shadow">{gameState.score}</span>
              </div>
 
-             {/* Progress Bar/Counter */}
+             {/* Progress Bar */}
              <div className="flex flex-col items-end w-32">
                 <span className="text-[10px] uppercase text-gray-400 font-mono tracking-widest">Progress</span>
                 <div className="w-full h-3 bg-gray-800 border border-gray-600 mt-1">

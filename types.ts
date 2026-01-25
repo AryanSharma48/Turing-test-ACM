@@ -19,3 +19,4 @@ export interface GameState {
   score: number;
   teamName?: string;
 }
+
