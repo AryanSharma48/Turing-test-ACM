@@ -20,43 +20,43 @@ const STATIC_DATA = [
   {
     subject: "",
     images: [
-      { url: childrenREAL, type: 'DESIGN' },
-      { url: childrenAI, type: 'AI' }
+      { url: childrenREAL, type: 'AI' },
+      { url: childrenAI, type: 'DESIGN' }
     ]
   },
   {
     subject: "",
     images: [
-      { url: trainREAL, type: 'DESIGN' },
-      { url: trainAI, type: 'AI' }
+      { url: trainREAL, type: 'AI' },
+      { url: trainAI, type: 'DESIGN' }
     ]
   },
   {
     subject: "",
     images: [
-      { url: droneREAL, type: 'DESIGN' },
-      { url: droneAI, type: 'AI' }
+      { url: droneREAL, type: 'AI' },
+      { url: droneAI, type: 'DESIGN' }
     ]
   },
   {
     subject: "",
     images: [
-      { url: dogREAL, type: 'DESIGN' },
-      { url: dogFAKE, type: 'AI' }
+      { url: dogREAL, type: 'AI' },
+      { url: dogFAKE, type: 'DESIGN' }
     ]
   },
   {
     subject: "",
     images: [
-      { url: parachuteREAL, type: 'DESIGN' },
-      { url: parachuteAI, type: 'AI' }
+      { url: parachuteREAL, type: 'AI' },
+      { url: parachuteAI, type: 'DESIGN' }
     ]
   },
   {
     subject: "",
     images: [
-      { url: snowREAL, type: 'DESIGN' },
-      { url: snowAI, type: 'AI' }
+      { url: snowREAL, type: 'AI' },
+      { url: snowAI, type: 'DESIGN' }
     ]
   }
 ] as const;
