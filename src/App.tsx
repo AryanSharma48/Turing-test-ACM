@@ -13,7 +13,8 @@ import {
  signInWithEmailAndPassword
 } from "firebase/auth";
 import { auth, db } from "./firebase";
-import { doc, getDoc } from "firebase/firestore";
+// ADDED: Imports for real-time session tracking
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { ArrowRight, RotateCcw, Zap, LogOut, ShieldAlert } from 'lucide-react';
 
 export default function App() {
@@ -29,6 +30,40 @@ export default function App() {
  });
 
   const roundsEndRef = useRef<HTMLDivElement>(null);
+
+// --- HEARTBEAT SYSTEM (NEW) ---
+// Tracks active players in the 'active_sessions' collection
+ useEffect(() => {
+   let heartbeatInterval: any;
+
+   const updateHeartbeat = async () => {
+     if (user && gameState.status === 'PLAYING') {
+       try {
+         const sessionRef = doc(db, "active_sessions", user.uid);
+         await setDoc(sessionRef, {
+           name: gameState.teamName,
+           email: user.email,
+           lastActive: serverTimestamp()
+         }, { merge: true });
+       } catch (err) {
+         console.error("Heartbeat sync failed:", err);
+       }
+     }
+   };
+
+   if (gameState.status === 'PLAYING' && user) {
+     updateHeartbeat();
+     heartbeatInterval = setInterval(updateHeartbeat, 60000); // Pulse every 60s
+   }
+
+   return () => {
+     if (heartbeatInterval) clearInterval(heartbeatInterval);
+     // Cleanup session when player leaves the game or finishes
+     if (user && (gameState.status === 'FINISHED' || gameState.status === 'IDLE')) {
+       deleteDoc(doc(db, "active_sessions", user.uid)).catch(() => {});
+     }
+   };
+ }, [gameState.status, user, gameState.teamName]);
 
 // --- AUTH & ADMIN ROLE CHECK ---
  useEffect(() => {
@@ -47,8 +82,6 @@ export default function App() {
          setGameState(prev => ({
            ...prev,
            teamName: nameFromEmail,
-           // REDIRECTION LOGIC: If admin, go straight to ADMIN dashboard.
-           // If regular user and was logging in, go to GENERATING.
            status: roleIsAdmin ? 'ADMIN' : (prev.status === 'LOGIN' ? 'GENERATING' : prev.status)
          }));
        } catch (err) {
@@ -91,7 +124,6 @@ export default function App() {
  const handleLogin = async (usernameInput: string, passwordInput: string) => {
    const email = `${usernameInput.trim()}@acm.com`;
    try {
-     // The onAuthStateChanged listener above will handle the redirection automatically
      await signInWithEmailAndPassword(auth, email, passwordInput);
    } catch (error) {
      alert("CRITICAL_ERROR: INVALID_AGENT_CREDENTIALS");
@@ -101,6 +133,10 @@ export default function App() {
  const handleLogout = useCallback(async () => {
    if (window.confirm("Terminate session and return to terminal?")) {
      try {
+       // Clear live session before logout
+       if (user) {
+         await deleteDoc(doc(db, "active_sessions", user.uid));
+       }
        await signOut(auth);
        setGameState({
          status: 'IDLE',
@@ -113,7 +149,7 @@ export default function App() {
        console.error("Logout failed:", error);
      }
    }
- }, []);
+ }, [user]);
 
  const startGame = useCallback(() => {
    if (user) {
@@ -153,7 +189,6 @@ export default function App() {
 
  const completedRounds = gameState.rounds.filter(r => r.userChoiceId !== null).length;
  const isAllAnswered = gameState.rounds.length > 0 && completedRounds === gameState.rounds.length;
-
 
   // --- VIEW ROUTING ---
   if (gameState.status === 'LOGIN') {
