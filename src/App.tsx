@@ -65,7 +65,7 @@ export default function App() {
    };
  }, [gameState.status, user, gameState.teamName, gameState.score, gameState.rounds]);
 
-// --- AUTH, ADMIN ROLE CHECK & PERSISTENCE (DELIVERABLE 6) ---
+// --- AUTH, ADMIN ROLE CHECK & PERSISTENCE ---
  useEffect(() => {
    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
      if (currentUser) {
@@ -78,7 +78,6 @@ export default function App() {
          setUser(currentUser);
          const nameFromEmail = currentUser.email?.split('@')[0] || 'Agent';
 
-         // RECOVERY LOGIC: Check for existing session on login/reload
          const sessionRef = doc(db, "active_sessions", currentUser.uid);
          const sessionSnap = await getDoc(sessionRef);
 
@@ -87,7 +86,7 @@ export default function App() {
            setGameState({
              status: 'PLAYING',
              teamName: nameFromEmail,
-             rounds: savedData.rounds || [], // Restore full rounds state
+             rounds: savedData.rounds || [],
              score: savedData.currentScore || 0,
              loadingProgress: 100
            });
@@ -113,7 +112,6 @@ export default function App() {
 
  // --- TRIGGER GAME GENERATION ---
  useEffect(() => {
-   // GUARD: Only generate if we don't have restored rounds from the session
    if (gameState.status === 'GENERATING' && gameState.rounds.length === 0) {
      const loadGame = async () => {
        try {
@@ -184,7 +182,7 @@ export default function App() {
      
      const currentScore = newRounds.filter(r => r.isCorrect).length;
      
-     // Immediate Cloud Save (Syncs with RoundCard lock logic)
+
      savePartialProgress(newRounds, currentScore, prev.teamName);
 
      return { ...prev, rounds: newRounds, score: currentScore };

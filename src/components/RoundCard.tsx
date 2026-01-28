@@ -8,7 +8,6 @@ interface RoundCardProps {
 }
 
 export const RoundCard: React.FC<RoundCardProps> = ({ round, onSelect }) => {
-  // Logic: hasSelected must reflect the round state to enable persistence on reload
   const hasSelected = round.userChoiceId !== null && round.userChoiceId !== undefined;
 
   return (
@@ -37,11 +36,10 @@ export const RoundCard: React.FC<RoundCardProps> = ({ round, onSelect }) => {
             const isSelected = round.userChoiceId === image.id;
             const isCorrect = image.type === 'AI'; 
             
-            // Logic for visual states
             let containerClass = "border-gray-700 hover:border-[#00FF9D] hover:scale-[1.02] hover:-rotate-1 cursor-pointer";
             let shadowClass = "hover:shadow-[8px_8px_0px_#00FF9D]";
             
-            // Deliverable 6: Lock the UI if a selection exists in state
+
             if (hasSelected) {
               if (isSelected) {
                 if (isCorrect) {
@@ -62,7 +60,6 @@ export const RoundCard: React.FC<RoundCardProps> = ({ round, onSelect }) => {
             return (
               <div 
                 key={image.id}
-                // Deliverable 6: Functionally block the click if already answered
                 onClick={() => !hasSelected && onSelect(round.id, image.id)}
                 className={`relative transition-all duration-300 group ${shadowClass}`}
               >
@@ -105,7 +102,7 @@ export const RoundCard: React.FC<RoundCardProps> = ({ round, onSelect }) => {
                    )}
                 </div>
 
-                {/* Hover "Pick Me" Text - Only if not selected yet */}
+
                 {!hasSelected && (
                   <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-y-2 group-hover:translate-y-0 z-20">
                     <div className="bg-white text-black font-bold px-4 py-1 border-2 border-black shadow-[4px_4px_0px_#000] uppercase text-sm">
