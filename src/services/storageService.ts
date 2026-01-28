@@ -8,33 +8,30 @@ import {
   deleteDoc
 } from "firebase/firestore";
 
-export interface TeamScore {
-  name: string;
-  email: string;
-  score: number;
-  timestamp: any;
-}
-
-// Save partial progress
+// SAVE PARTIAL PROGRESS
 export const savePartialProgress = async (rounds: any[], score: number, teamName: string) => {
   if (!auth.currentUser) return;
 
   try {
     const sessionRef = doc(db, "active_sessions", auth.currentUser.uid);
+
+    const progressCount = rounds.filter(r => r.userChoiceId !== null).length;
+
     await setDoc(sessionRef, {
       name: teamName,
       email: auth.currentUser.email,
       rounds: rounds,
       currentScore: score,
+      progress: progressCount,
       lastActive: serverTimestamp(),
-      status: 'IN_PROGRESS'
+      status: 'LIVE'
     }, { merge: true });
   } catch (e) {
-    console.error("CRITICAL_SYNC_FAILURE: Failed to upload partial state:", e);
+    console.error("CRITICAL_SYNC_FAILURE:", e);
   }
 };
 
-// Save final score and clean up active session
+// SAVE FINAL SCORE
 export const saveScore = async (teamName: string, score: number) => {
   if (!auth.currentUser) {
     console.error("ACCESS_DENIED: No authenticated agent found.");
@@ -47,7 +44,9 @@ export const saveScore = async (teamName: string, score: number) => {
       email: auth.currentUser.email,
       score: score,
       timestamp: serverTimestamp(),
+      status: 'LOCKED'
     });
+
 
     const sessionRef = doc(db, "active_sessions", auth.currentUser.uid);
     await deleteDoc(sessionRef);
