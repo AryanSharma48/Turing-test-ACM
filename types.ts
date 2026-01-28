@@ -13,7 +13,7 @@ export interface GameRound {
 }
 
 export interface GameState {
-  status: 'LOGIN' | 'IDLE' | 'GENERATING' | 'PLAYING' | 'FINISHED' | 'ADMIN';
+  status: 'LOGIN' | 'IDLE' | 'RULES' | 'GENERATING' | 'PLAYING' | 'FINISHED' | 'ADMIN';
   rounds: GameRound[];
   loadingProgress: number;
   score: number;

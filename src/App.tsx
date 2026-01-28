@@ -6,6 +6,7 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { RoundCard } from './components/RoundCard';
 import LoginPage from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
+import RulesPage from './components/RulesPage';
 import {
  onAuthStateChanged,
  User,
@@ -27,6 +28,7 @@ export default function App() {
    score: 0,
    teamName: 'Guest Agent'
  });
+  const [loginError, setLoginError] = useState<string | undefined>(undefined);
 
   const roundsEndRef = useRef<HTMLDivElement>(null);
 
@@ -65,50 +67,59 @@ export default function App() {
    };
  }, [gameState.status, user, gameState.teamName, gameState.score, gameState.rounds]);
 
-// --- AUTH, ADMIN ROLE CHECK & PERSISTENCE ---
- useEffect(() => {
-   const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-     if (currentUser) {
-       try {
-         const userRef = doc(db, "users", currentUser.uid);
-         const userSnap = await getDoc(userRef);
-         const roleIsAdmin = userSnap.exists() && userSnap.data().role === 'admin';
-         
-         setIsAdmin(roleIsAdmin);
-         setUser(currentUser);
-         const nameFromEmail = currentUser.email?.split('@')[0] || 'Agent';
 
-         const sessionRef = doc(db, "active_sessions", currentUser.uid);
-         const sessionSnap = await getDoc(sessionRef);
+ // --- AUTH, ADMIN ROLE CHECK & PERSISTENCE ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        try {
+          const userRef = doc(db, "users", currentUser.uid);
+          const userSnap = await getDoc(userRef);
+          const roleIsAdmin = userSnap.exists() && userSnap.data().role === 'admin';
+          
+          setIsAdmin(roleIsAdmin);
+          setUser(currentUser);
+          const nameFromEmail = currentUser.email?.split('@')[0] || 'Agent';
 
-         if (!roleIsAdmin && sessionSnap.exists()) {
-           const savedData = sessionSnap.data();
-           setGameState({
-             status: 'PLAYING',
-             teamName: nameFromEmail,
-             rounds: savedData.rounds || [],
-             score: savedData.currentScore || 0,
-             loadingProgress: 100
-           });
-         } else {
-           setGameState(prev => ({
-             ...prev,
-             teamName: nameFromEmail,
-             status: roleIsAdmin ? 'ADMIN' : (prev.status === 'LOGIN' ? 'GENERATING' : prev.status)
-           }));
-         }
-       } catch (err) {
-         console.error("Initialization failed:", err);
-       }
-     } else {
-       setUser(null);
-       setIsAdmin(false);
-       setGameState(prev => ({ ...prev, status: 'IDLE', rounds: [], score: 0 }));
-     }
-     setLoading(false);
-   });
-   return () => unsubscribe();
- }, []);
+          const sessionRef = doc(db, "active_sessions", currentUser.uid);
+          const sessionSnap = await getDoc(sessionRef);
+
+          if (!roleIsAdmin && sessionSnap.exists()) {
+            const savedData = sessionSnap.data();
+            setGameState({
+              status: 'PLAYING',
+              teamName: nameFromEmail,
+              rounds: savedData.rounds || [],
+              score: savedData.currentScore || 0,
+              loadingProgress: 100
+            });
+          } else {
+            
+            setGameState(prev => ({
+              ...prev,
+              teamName: nameFromEmail,
+              status: roleIsAdmin 
+                ? 'ADMIN' 
+                : (prev.status === 'IDLE' ? 'IDLE' : 'RULES')
+            }));
+          }
+        } catch (err) {
+          console.error("Initialization failed:", err);
+          
+          setGameState(prev => ({
+            ...prev,
+            status: prev.status === 'LOGIN' ? 'GENERATING' : prev.status
+          }));
+        }
+      } else {
+        setUser(null);
+        setIsAdmin(false);
+        setGameState(prev => ({ ...prev, status: 'IDLE', rounds: [], score: 0 }));
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
  // --- TRIGGER GAME GENERATION ---
  useEffect(() => {
@@ -136,14 +147,24 @@ export default function App() {
 
   // --- HANDLERS ---
  const handleLogin = async (usernameInput: string, passwordInput: string) => {
-   const email = `${usernameInput.trim()}@acm.com`;
-   try {
-     await signInWithEmailAndPassword(auth, email, passwordInput);
-   } catch (error) {
-     alert("CRITICAL_ERROR: INVALID_AGENT_CREDENTIALS");
-   }
- };
-
+  setLoginError(undefined); // Clear previous errors
+  const email = `${usernameInput.trim()}@acm.com`;
+  
+  try {
+    await signInWithEmailAndPassword(auth, email, passwordInput);
+    
+    // FIX ADDED HERE: 
+    // We manually force the screen to change to 'RULES' immediately.
+    // We check if it is NOT admin, because admins go to a different screen.
+    if (usernameInput.trim() !== 'admin') {
+       setGameState(prev => ({ ...prev, status: 'RULES' }));
+    }
+    
+    } catch (error) {
+    console.error("Login failed:", error);
+    setLoginError("INVALID_CREDENTIALS"); // Triggers the red error box
+    }
+  };
  const handleLogout = useCallback(async () => {
    if (window.confirm("Terminate session and return to terminal?")) {
      try {
@@ -212,7 +233,18 @@ export default function App() {
   // --- VIEW ROUTING ---
   if (loading) return <LoadingScreen progress={0} />;
   
-  if (gameState.status === 'LOGIN') return <LoginPage onSubmit={handleLogin} />;
+  if (gameState.status === 'LOGIN') {
+  return (
+    <LoginPage 
+      onSubmit={handleLogin} 
+      error={loginError}
+      onCancel={() => {
+        setLoginError(undefined);
+        setGameState(prev => ({ ...prev, status: 'IDLE' }));
+      }}
+    />
+  );
+}
   
   if (gameState.status === 'ADMIN') {
     return (
@@ -227,6 +259,14 @@ export default function App() {
       />
     );
   }
+
+  if (gameState.status === 'RULES') {
+  return (
+    <RulesPage 
+      onStart={() => setGameState(prev => ({ ...prev, status: 'GENERATING' }))} 
+    />
+  );
+}
 
   if (gameState.status === 'GENERATING') return <LoadingScreen progress={gameState.loadingProgress} />;
 
