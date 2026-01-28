@@ -8,67 +8,106 @@ import LoginPage from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import RulesPage from './components/RulesPage';
 import {
- onAuthStateChanged,
- User,
- signOut,
- signInWithEmailAndPassword
+  onAuthStateChanged,
+  User,
+  signOut,
+  signInWithEmailAndPassword
 } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { ArrowRight, RotateCcw, Zap, LogOut } from 'lucide-react';
+import { ArrowRight, RotateCcw, Zap, LogOut, CheckCircle, Timer, AlertTriangle } from 'lucide-react';
+
+// FORMAT HELPER FOR TIMER (MM:SS)
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
 
 export default function App() {
- const [user, setUser] = useState<User | null>(null);
- const [isAdmin, setIsAdmin] = useState(false);
- const [loading, setLoading] = useState(true);
- const [gameState, setGameState] = useState<GameState>({
-   status: 'IDLE',
-   rounds: [],
-   loadingProgress: 0,
-   score: 0,
-   teamName: 'Guest Agent'
- });
+  const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
+  
+  // NEW: Timer State (300s = 5 mins)
+  const [timeLeft, setTimeLeft] = useState(300);
+
+  const [gameState, setGameState] = useState<GameState>({
+    status: 'LOGIN',
+    rounds: [],
+    loadingProgress: 0,
+    score: 0,
+    teamName: 'Guest Agent'
+  });
   const [loginError, setLoginError] = useState<string | undefined>(undefined);
 
-  const roundsEndRef = useRef<HTMLDivElement>(null);
+  // --- GAME FINISH LOGIC (Moved up so Timer can use it) ---
+  const finishGame = useCallback(async () => {
+    await saveScore(gameState.teamName, gameState.score);
+    if (user) await deleteDoc(doc(db, "active_sessions", user.uid)).catch(() => {});
+    setGameState(prev => ({ ...prev, status: 'FINISHED' }));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [gameState.teamName, gameState.score, user]);
 
-// --- HEARTBEAT SYSTEM ---
- useEffect(() => {
-   let heartbeatInterval: any;
+  // --- TIMER LOGIC ---
+  useEffect(() => {
+    let timerId: any;
 
-   const updateHeartbeat = async () => {
-     if (user && gameState.status === 'PLAYING') {
-       try {
-         const sessionRef = doc(db, "active_sessions", user.uid);
-         await setDoc(sessionRef, {
-           name: gameState.teamName,
-           email: user.email,
-           lastActive: serverTimestamp(),
-           currentScore: gameState.score,
-           progress: gameState.rounds.filter(r => r.userChoiceId !== null).length,
-           rounds: gameState.rounds // Sync rounds for cloud persistence
-         }, { merge: true });
-       } catch (err) {
-         console.error("Heartbeat sync failed:", err);
-       }
-     }
-   };
+    if (gameState.status === 'PLAYING' && timeLeft > 0) {
+      timerId = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (gameState.status === 'PLAYING' && timeLeft === 0) {
+      // AUTO-SUBMIT WHEN TIME IS UP
+      finishGame();
+    }
 
-   if (gameState.status === 'PLAYING' && user) {
-     updateHeartbeat();
-     heartbeatInterval = setInterval(updateHeartbeat, 30000); 
-   }
-
-   return () => {
-     if (heartbeatInterval) clearInterval(heartbeatInterval);
-     if (user && gameState.status === 'FINISHED') {
-       deleteDoc(doc(db, "active_sessions", user.uid)).catch(() => {});
-     }
-   };
- }, [gameState.status, user, gameState.teamName, gameState.score, gameState.rounds]);
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [gameState.status, timeLeft, finishGame]);
 
 
- // --- AUTH, ADMIN ROLE CHECK & PERSISTENCE ---
+  // --- HEARTBEAT SYSTEM ---
+  useEffect(() => {
+    let heartbeatInterval: any;
+
+    const updateHeartbeat = async () => {
+      if (user && gameState.status === 'PLAYING') {
+        try {
+          const sessionRef = doc(db, "active_sessions", user.uid);
+          await setDoc(sessionRef, {
+            name: gameState.teamName,
+            email: user.email,
+            lastActive: serverTimestamp(),
+            currentScore: gameState.score,
+            progress: gameState.rounds.filter(r => r.userChoiceId !== null).length,
+            rounds: gameState.rounds,
+            timeLeft: timeLeft // Optional: Save time to persist on reload if needed later
+          }, { merge: true });
+        } catch (err) {
+          console.error("Heartbeat sync failed:", err);
+        }
+      }
+    };
+
+    if (gameState.status === 'PLAYING' && user) {
+      updateHeartbeat();
+      heartbeatInterval = setInterval(updateHeartbeat, 30000); 
+    }
+
+    return () => {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (user && gameState.status === 'FINISHED') {
+        deleteDoc(doc(db, "active_sessions", user.uid)).catch(() => {});
+      }
+    };
+  }, [gameState.status, user, gameState.teamName, gameState.score, gameState.rounds, timeLeft]);
+
+
+  // --- AUTH & PERSISTENCE ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -86,165 +125,164 @@ export default function App() {
 
           if (!roleIsAdmin && sessionSnap.exists()) {
             const savedData = sessionSnap.data();
+            const savedRounds = savedData.rounds || [];
+            const answeredCount = savedRounds.filter((r: any) => r.userChoiceId !== null && r.userChoiceId !== undefined).length;
+            const restoreIndex = answeredCount < savedRounds.length ? answeredCount : savedRounds.length - 1;
+            
+            setCurrentRoundIndex(restoreIndex >= 0 ? restoreIndex : 0);
+            
+            // Restore Time if available, else default
+            // setTimeLeft(savedData.timeLeft || 300);
+
             setGameState({
-              status: 'PLAYING',
+              status: 'IDLE', 
               teamName: nameFromEmail,
-              rounds: savedData.rounds || [],
+              rounds: savedRounds,
               score: savedData.currentScore || 0,
               loadingProgress: 100
             });
           } else {
-            
             setGameState(prev => ({
               ...prev,
               teamName: nameFromEmail,
-              status: roleIsAdmin 
-                ? 'ADMIN' 
-                : (prev.status === 'IDLE' ? 'IDLE' : 'RULES')
+              status: roleIsAdmin ? 'ADMIN' : 'IDLE' 
             }));
           }
         } catch (err) {
           console.error("Initialization failed:", err);
-          
-          setGameState(prev => ({
-            ...prev,
-            status: prev.status === 'LOGIN' ? 'GENERATING' : prev.status
-          }));
+          setGameState(prev => ({ ...prev, status: 'IDLE' }));
         }
       } else {
         setUser(null);
         setIsAdmin(false);
-        setGameState(prev => ({ ...prev, status: 'IDLE', rounds: [], score: 0 }));
+        setGameState(prev => ({ ...prev, status: 'LOGIN', rounds: [], score: 0 }));
       }
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
- // --- TRIGGER GAME GENERATION ---
- useEffect(() => {
-   if (gameState.status === 'GENERATING' && gameState.rounds.length === 0) {
-     const loadGame = async () => {
-       try {
-         const generatedRounds = await generateGameRounds((progress) => {
-           setGameState(prev => ({ ...prev, loadingProgress: progress }));
-         });
-        
-         setGameState(prev => ({
-           ...prev,
-           status: 'PLAYING',
-           rounds: generatedRounds,
-           loadingProgress: 100
-         }));
-       } catch (err) {
-         console.error("Game gen failed:", err);
-         setGameState(prev => ({ ...prev, status: 'IDLE' }));
-       }
-     };
-     loadGame();
-   }
- }, [gameState.status, gameState.rounds.length]);
+  // --- TRIGGER GAME GENERATION ---
+  useEffect(() => {
+    if (gameState.status === 'GENERATING' && gameState.rounds.length === 0) {
+      const loadGame = async () => {
+        try {
+          const generatedRounds = await generateGameRounds((progress) => {
+            setGameState(prev => ({ ...prev, loadingProgress: progress }));
+          });
+          
+          setGameState(prev => ({
+            ...prev,
+            status: 'PLAYING',
+            rounds: generatedRounds,
+            loadingProgress: 100
+          }));
+          setCurrentRoundIndex(0);
+          setTimeLeft(300); // RESET TIMER ON NEW GAME
+        } catch (err) {
+          console.error("Game gen failed:", err);
+          setGameState(prev => ({ ...prev, status: 'IDLE' }));
+        }
+      };
+      loadGame();
+    }
+    else if (gameState.status === 'GENERATING' && gameState.rounds.length > 0) {
+       setGameState(prev => ({ ...prev, status: 'PLAYING' }));
+       setTimeLeft(300); // Reset timer if restarting existing stack
+    }
+  }, [gameState.status, gameState.rounds.length]);
 
   // --- HANDLERS ---
- const handleLogin = async (usernameInput: string, passwordInput: string) => {
-  setLoginError(undefined); // Clear previous errors
-  const email = `${usernameInput.trim()}@acm.com`;
-  
-  try {
-    await signInWithEmailAndPassword(auth, email, passwordInput);
+  const handleLogin = async (usernameInput: string, passwordInput: string) => {
+    setLoginError(undefined); 
+    const email = `${usernameInput.trim()}@acm.com`;
     
-    // FIX ADDED HERE: 
-    // We manually force the screen to change to 'RULES' immediately.
-    // We check if it is NOT admin, because admins go to a different screen.
-    if (usernameInput.trim() !== 'admin') {
-       setGameState(prev => ({ ...prev, status: 'RULES' }));
-    }
-    
+    try {
+      await signInWithEmailAndPassword(auth, email, passwordInput);
     } catch (error) {
-    console.error("Login failed:", error);
-    setLoginError("INVALID_CREDENTIALS"); // Triggers the red error box
+      console.error("Login failed:", error);
+      setLoginError("INVALID_CREDENTIALS"); 
     }
   };
- const handleLogout = useCallback(async () => {
-   if (window.confirm("Terminate session and return to terminal?")) {
-     try {
-       if (user && !isAdmin) await deleteDoc(doc(db, "active_sessions", user.uid));
-       await signOut(auth);
-       setGameState({
-         status: 'IDLE',
-         rounds: [],
-         loadingProgress: 0,
-         score: 0,
-         teamName: 'Guest Agent'
-       });
-     } catch (error) {
-       console.error("Logout failed:", error);
-     }
-   }
- }, [user, isAdmin]);
 
- const startGame = useCallback(() => {
-   if (user) {
-     setGameState(prev => ({ ...prev, status: isAdmin ? 'ADMIN' : 'GENERATING' }));
-   } else {
-     setGameState(prev => ({ ...prev, status: 'LOGIN' }));
-   }
- }, [user, isAdmin]);
+  const handleLogout = useCallback(async () => {
+    if (window.confirm("Terminate session and return to terminal?")) {
+      try {
+        if (user && !isAdmin) await deleteDoc(doc(db, "active_sessions", user.uid));
+        await signOut(auth);
+        setGameState({
+          status: 'LOGIN',
+          rounds: [],
+          loadingProgress: 0,
+          score: 0,
+          teamName: 'Guest Agent'
+        });
+        setCurrentRoundIndex(0); 
+        setTimeLeft(300);
+      } catch (error) {
+        console.error("Logout failed:", error);
+      }
+    }
+  }, [user, isAdmin]);
 
- // --- GAMEPLAY HANDLERS ---
- const handleSelection = useCallback((roundId: number, imageId: string) => {
-   setGameState(prev => {
-     const newRounds = prev.rounds.map(round => {
-       if (round.id !== roundId) return round;
-       const selectedImage = round.images.find(img => img.id === imageId);
-       const isCorrect = selectedImage?.type === 'AI';
-       return { ...round, userChoiceId: imageId, isCorrect: isCorrect };
-     });
-     
-     const currentScore = newRounds.filter(r => r.isCorrect).length;
-     
+  const startGame = useCallback(() => {
+    if (user) {
+      setGameState(prev => ({ ...prev, status: isAdmin ? 'ADMIN' : 'RULES' }));
+    } else {
+      setGameState(prev => ({ ...prev, status: 'LOGIN' }));
+    }
+  }, [user, isAdmin]);
 
-     savePartialProgress(newRounds, currentScore, prev.teamName);
+  const handleSelection = useCallback((roundId: number, imageId: string) => {
+    setGameState(prev => {
+      const newRounds = prev.rounds.map(round => {
+        if (round.id !== roundId) return round;
+        const selectedImage = round.images.find(img => img.id === imageId);
+        const isCorrect = selectedImage?.type === 'AI';
+        return { ...round, userChoiceId: imageId, isCorrect: isCorrect };
+      });
+      
+      const currentScore = newRounds.filter(r => r.isCorrect).length;
+      savePartialProgress(newRounds, currentScore, prev.teamName);
+      return { ...prev, rounds: newRounds, score: currentScore };
+    });
+  }, []);
 
-     return { ...prev, rounds: newRounds, score: currentScore };
-   });
- }, []);
+  const handleNextRound = () => {
+    if (currentRoundIndex < gameState.rounds.length - 1) {
+      setCurrentRoundIndex(prev => prev + 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
- const finishGame = useCallback(async () => {
-   await saveScore(gameState.teamName, gameState.score);
-   if (user) await deleteDoc(doc(db, "active_sessions", user.uid)).catch(() => {});
-   
-   setGameState(prev => ({ ...prev, status: 'FINISHED' }));
-   window.scrollTo({ top: 0, behavior: 'smooth' });
- }, [gameState.teamName, gameState.score, user]);
+  const resetGame = useCallback(() => {
+    setGameState(prev => ({
+      ...prev,
+      status: 'IDLE',
+      rounds: [],
+      score: 0
+    }));
+    setCurrentRoundIndex(0); 
+    setTimeLeft(300);
+  }, []);
 
- const resetGame = useCallback(() => {
-   setGameState(prev => ({
-     ...prev,
-     status: 'IDLE',
-     rounds: [],
-     score: 0
-   }));
- }, []);
-
- const completedRounds = gameState.rounds.filter(r => r.userChoiceId !== null).length;
- const isAllAnswered = gameState.rounds.length > 0 && completedRounds === gameState.rounds.length;
+  // Helper variables for UI
+  const currentRound = gameState.rounds[currentRoundIndex];
+  const isCurrentRoundAnswered = currentRound?.userChoiceId !== null && currentRound?.userChoiceId !== undefined;
+  const isLastRound = currentRoundIndex === gameState.rounds.length - 1;
+  const completedRounds = gameState.rounds.filter(r => r.userChoiceId !== null).length;
 
   // --- VIEW ROUTING ---
   if (loading) return <LoadingScreen progress={0} />;
   
   if (gameState.status === 'LOGIN') {
-  return (
-    <LoginPage 
-      onSubmit={handleLogin} 
-      error={loginError}
-      onCancel={() => {
-        setLoginError(undefined);
-        setGameState(prev => ({ ...prev, status: 'IDLE' }));
-      }}
-    />
-  );
-}
+    return (
+      <LoginPage 
+        onSubmit={handleLogin} 
+        error={loginError}
+      />
+    );
+  }
   
   if (gameState.status === 'ADMIN') {
     return (
@@ -261,12 +299,12 @@ export default function App() {
   }
 
   if (gameState.status === 'RULES') {
-  return (
-    <RulesPage 
-      onStart={() => setGameState(prev => ({ ...prev, status: 'GENERATING' }))} 
-    />
-  );
-}
+    return (
+      <RulesPage 
+        onStart={() => setGameState(prev => ({ ...prev, status: 'GENERATING' }))} 
+      />
+    );
+  }
 
   if (gameState.status === 'GENERATING') return <LoadingScreen progress={gameState.loadingProgress} />;
 
@@ -319,6 +357,7 @@ export default function App() {
     );
   }
 
+  // IDLE PAGE (HOME)
   if (gameState.status === 'IDLE') {
     return (
       <div className="min-h-screen flex flex-col relative overflow-hidden">
@@ -340,6 +379,7 @@ export default function App() {
     );
   }
 
+  // --- PLAYING VIEW ---
   return (
     <div className="min-h-screen text-white custom-scrollbar flex flex-col">
       <header className="sticky top-0 z-50 bg-[#13111C]/95 border-b-4 border-black px-4 py-3 shadow-[0px_4px_20px_rgba(0,0,0,0.5)]">
@@ -357,43 +397,80 @@ export default function App() {
               <span className="text-[10px] font-mono font-bold uppercase tracking-tighter">Logout</span>
             </button>
           </div>
+          
           <div className="flex items-center gap-4 sm:gap-8">
-             <div className="flex flex-col items-end">
-                <span className="text-[10px] uppercase text-gray-400 font-mono tracking-widest">Score</span>
-                <span className="font-heading text-2xl text-[#00FF9D] leading-none retro-text-shadow">{gameState.score}</span>
+             {/* TIMER DISPLAY */}
+             <div className="flex items-center gap-2 border border-[#FF00E6]/30 bg-black/40 px-3 py-1.5 rounded">
+                {timeLeft < 60 ? (
+                  <AlertTriangle size={16} className="text-red-500 animate-pulse" />
+                ) : (
+                  <Timer size={16} className="text-[#FF00E6]" />
+                )}
+                <span className={`font-mono text-lg font-bold tracking-widest ${timeLeft < 60 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                  {formatTime(timeLeft)}
+                </span>
              </div>
+
              <div className="flex flex-col items-end w-32">
                 <span className="text-[10px] uppercase text-gray-400 font-mono tracking-widest">Progress</span>
                 <div className="w-full h-3 bg-gray-800 border border-gray-600 mt-1">
                    <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300" 
                         style={{ width: `${(completedRounds / gameState.rounds.length) * 100}%` }}></div>
                 </div>
+                <span className="text-[9px] mt-1 text-gray-500 font-mono">ROUND {currentRoundIndex + 1} / {gameState.rounds.length}</span>
              </div>
           </div>
         </div>
       </header>
-      <div className="container mx-auto px-4 py-8 flex-1">
-        <div className="text-center mb-12">
+      
+      <div className="container mx-auto px-4 py-8 flex-1 flex flex-col justify-center">
+        <div className="text-center mb-8">
            <div className="inline-block border-2 border-[#00FF9D] text-[#00FF9D] px-4 py-1 font-mono text-xs uppercase mb-2 bg-[#00FF9D]/10">Current Objective</div>
            <h2 className="text-3xl md:text-4xl font-heading text-white uppercase retro-text-shadow">Locate the AI Image</h2>
         </div>
-        <div className="space-y-4">
-          {gameState.rounds.map((round) => (
-            <RoundCard key={round.id} round={round} onSelect={handleSelection} />
-          ))}
+        
+        <div className="max-w-4xl mx-auto w-full mb-24">
+          {currentRound && (
+             <div className="animate-in fade-in slide-in-from-right-8 duration-500" key={currentRound.id}>
+                <RoundCard 
+                   round={currentRound} 
+                   onSelect={handleSelection} 
+                />
+             </div>
+          )}
         </div>
       </div>
-      <div className="fixed bottom-0 left-0 w-full p-6 pointer-events-none flex justify-center z-40 bg-gradient-to-t from-[#13111C] via-[#13111C]/90 to-transparent">
-        <button 
-          onClick={finishGame} 
-          disabled={!isAllAnswered} 
-          className={`pointer-events-auto game-btn px-16 py-5 font-heading text-2xl uppercase tracking-widest transition-all duration-500 transform 
-            ${isAllAnswered 
-              ? 'bg-[#00FF9D] text-black opacity-100 translate-y-0 hover:scale-105 shadow-[0_0_30px_rgba(0,255,157,0.4)]' 
-              : 'bg-gray-800 text-gray-500 translate-y-20 opacity-0'}`}
-        >
-          Submit
-        </button>
+      
+      <div className="fixed bottom-0 left-0 w-full p-6 bg-gradient-to-t from-[#13111C] via-[#13111C]/95 to-transparent z-40 border-t border-white/5 backdrop-blur-sm">
+        <div className="container mx-auto flex justify-center">
+          {!isLastRound ? (
+            <button 
+              onClick={handleNextRound} 
+              disabled={!isCurrentRoundAnswered} 
+              className={`group pointer-events-auto game-btn px-12 py-5 font-heading text-xl uppercase tracking-widest transition-all duration-300 flex items-center gap-4
+                ${isCurrentRoundAnswered 
+                  ? 'bg-white text-black hover:bg-[#00FF9D] shadow-[0_0_20px_rgba(255,255,255,0.3)]' 
+                  : 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-50'}`}
+            >
+              <span>Next Sequence</span>
+              <ArrowRight className={`w-6 h-6 transition-transform ${isCurrentRoundAnswered ? 'group-hover:translate-x-2' : ''}`} />
+            </button>
+          ) : (
+            <button 
+              onClick={finishGame} 
+              disabled={!isCurrentRoundAnswered} 
+              className={`group pointer-events-auto game-btn px-16 py-5 font-heading text-2xl uppercase tracking-widest transition-all duration-500 transform 
+                ${isCurrentRoundAnswered 
+                  ? 'bg-[#00FF9D] text-black hover:scale-105 shadow-[0_0_30px_rgba(0,255,157,0.4)]' 
+                  : 'bg-gray-800 text-gray-500 opacity-50 cursor-not-allowed'}`}
+            >
+              <div className="flex items-center gap-3">
+                 <CheckCircle size={24} />
+                 <span>Submit Results</span>
+              </div>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
