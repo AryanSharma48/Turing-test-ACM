@@ -235,7 +235,7 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
                 </div>
                 <div className="text-right">
                     <span className="text-[10px] text-gray-500 block uppercase font-bold tracking-widest">Accuracy</span>
-                    <span className="text-3xl font-heading text-[#00FF9D]">{selectedAgent.score}/6</span>
+                    <span className="text-3xl font-heading text-[#00FF9D]">{selectedAgent.score}/{selectedAgent.rounds?.length || 6}</span>
                 </div>
               </div>
             </div>
@@ -323,7 +323,7 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-[11px]">
                     <span className="text-gray-500 font-bold uppercase">Avg_Score:</span> 
-                    <span className="text-[#00FF9D] font-black text-sm">{(players.reduce((a,b)=>a+b.score,0)/(players.length||1)).toFixed(1)}/6</span>
+                    <span className="text-[#00FF9D] font-black text-sm">{(players.reduce((a,b)=>a+b.score,0)/(players.length||1)).toFixed(1)}/{Math.round(players.reduce((a,b)=>a+(b.rounds?.length||6),0)/(players.length||1))}</span>
                 </div>
                 <div className="flex justify-between items-center text-[11px]">
                     <span className="text-gray-500 font-bold uppercase">Total_Logs:</span> 
@@ -404,8 +404,8 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
                                <p className="text-[10px] text-gray-500 font-mono font-bold">{p.email}</p>
                             </td>
                             <td className="p-4 text-center">
-                              <span className={`px-4 py-1 font-heading text-xl border-2 tracking-tighter ${p.score >= 5 ? 'border-[#00FF9D] text-[#00FF9D] bg-[#00FF9D]/10' : 'border-gray-800 text-gray-500 bg-black/40'}`}>
-                                {p.score}/6
+                              <span className={`px-4 py-1 font-heading text-xl border-2 tracking-tighter ${p.score >= ((p.rounds?.length || 6) - 1) ? 'border-[#00FF9D] text-[#00FF9D] bg-[#00FF9D]/10' : 'border-gray-800 text-gray-500 bg-black/40'}`}>
+                                {p.score}/{p.rounds?.length || 6}
                               </span>
                             </td>
                             <td className="p-4 text-center font-black">
