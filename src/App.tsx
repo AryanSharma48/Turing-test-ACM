@@ -19,6 +19,8 @@ import {
   getDoc, 
   setDoc, 
   deleteDoc, 
+  collection,
+  addDoc,
   serverTimestamp 
 } from "firebase/firestore";
 import { ArrowRight, RotateCcw, Zap, LogOut, CheckCircle, Timer } from 'lucide-react';
@@ -36,10 +38,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
-  
-  // LOGIC: 5-sec per round timer
   const [roundTimeLeft, setRoundTimeLeft] = useState(5);
-  // LOGIC: Track total time for Admin Dashboard
   const totalElapsedSeconds = useRef(0);
 
   const [gameState, setGameState] = useState<GameState>({
@@ -51,45 +50,85 @@ export default function App() {
   });
   const [loginError, setLoginError] = useState<string | undefined>(undefined);
 
-  // --- GAME FINISH LOGIC ---
-  const finishGame = useCallback(async () => {
+  // --- GAME FINISH LOGIC (Uplink to History) ---
+  const finishGame = useCallback(async (finalRounds?: any[], finalScore?: number) => {
     if (!user) return;
-    // FIXED: Added gameState.rounds as the 4th argument to resolve TS error
-    await saveScore(
-      gameState.teamName, 
-      gameState.score, 
-      totalElapsedSeconds.current, 
-      gameState.rounds
-    );
-    // Cleanup active session on finish
-    await deleteDoc(doc(db, "active_sessions", user.uid)).catch(() => {});
-    setGameState(prev => ({ ...prev, status: 'FINISHED' }));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    try {
+      // 1. Save to unique document in 'submissions' for history tracking
+      await addDoc(collection(db, "submissions"), {
+        uid: user.uid,
+        name: gameState.teamName,
+        email: user.email,
+        score: finalScore ?? gameState.score,
+        timeTaken: totalElapsedSeconds.current,
+        rounds: finalRounds ?? gameState.rounds,
+        timestamp: serverTimestamp(),
+        status: 'LOCKED',
+        role: 'player'
+      });
+
+      // 2. Clear the active session (Heartbeat cleanup)
+      await deleteDoc(doc(db, "active_sessions", user.uid));
+
+      setGameState(prev => ({ ...prev, status: 'FINISHED' }));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      console.error("Critical submission failure:", err);
+      alert("System Error: Could not uplink results. Check network.");
+    }
   }, [gameState.teamName, gameState.score, gameState.rounds, user]);
 
   // --- NAVIGATION LOGIC ---
-  const handleNextRound = useCallback(() => {
+  const handleNextRound = useCallback((updatedRounds?: any[], updatedScore?: number) => {
     if (currentRoundIndex < gameState.rounds.length - 1) {
       setCurrentRoundIndex(prev => prev + 1);
-      setRoundTimeLeft(5); // Reset 5s timer for the next image
+      setRoundTimeLeft(5); 
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      finishGame();
+      // If manually clicking next on the last round
+      finishGame(updatedRounds, updatedScore);
     }
   }, [currentRoundIndex, gameState.rounds.length, finishGame]);
 
-  // --- TIMER LOGIC (Per Round + Total Accumulator) ---
+  // --- TIMER LOGIC (Per Round + Final Transition Fix) ---
   useEffect(() => {
     let timerId: any;
 
     if (gameState.status === 'PLAYING') {
       timerId = setInterval(() => {
-        // 1. Increment total time taken
         totalElapsedSeconds.current += 1;
 
-        // 2. Decrement round timer
         setRoundTimeLeft((prev) => {
           if (prev <= 1) {
+            const currentRound = gameState.rounds[currentRoundIndex];
+            
+            // If the round hasn't been answered, mark it and move forward
+            if (currentRound && currentRound.userChoiceId === undefined) {
+              const newRounds = [...gameState.rounds];
+              newRounds[currentRoundIndex] = { 
+                ...currentRound, 
+                userChoiceId: null, 
+                isCorrect: false 
+              };
+              
+              const newScore = newRounds.filter(r => r.isCorrect).length;
+              savePartialProgress(newRounds, newScore, gameState.teamName);
+
+              // Update local state
+              setGameState(prevGS => ({ ...prevGS, rounds: newRounds, score: newScore }));
+
+              // Check if this was the last round timing out
+              if (currentRoundIndex >= newRounds.length - 1) {
+                finishGame(newRounds, newScore);
+                return 0; // Stop the timer
+              } else {
+                setCurrentRoundIndex(idx => idx + 1);
+                return 5; // Reset for next round
+              }
+            }
+            
+            // If already answered, trigger standard navigation
             handleNextRound();
             return 5;
           }
@@ -101,10 +140,10 @@ export default function App() {
     return () => {
       if (timerId) clearInterval(timerId);
     };
-  }, [gameState.status, handleNextRound]);
+  }, [gameState.status, currentRoundIndex, gameState.rounds, handleNextRound, finishGame, gameState.teamName]);
 
 
-  // --- HEARTBEAT SYSTEM ---
+  // --- HEARTBEAT SYSTEM (Live Uplink) ---
   useEffect(() => {
     let heartbeatInterval: any;
 
@@ -112,14 +151,18 @@ export default function App() {
       if (user && !isAdmin && gameState.status === 'PLAYING') {
         try {
           const sessionRef = doc(db, "active_sessions", user.uid);
+          const progressCount = gameState.rounds.filter(r => r.userChoiceId !== undefined).length;
+
           await setDoc(sessionRef, {
             name: gameState.teamName,
             email: user.email,
             lastActive: serverTimestamp(),
             currentScore: gameState.score,
-            progress: gameState.rounds.filter(r => r.userChoiceId !== null).length,
+            progress: progressCount,
             rounds: gameState.rounds,
-            totalTimeSpent: totalElapsedSeconds.current 
+            totalTimeSpent: totalElapsedSeconds.current,
+            status: 'LIVE',
+            role: 'player'
           }, { merge: true });
         } catch (err) {
           console.error("Heartbeat sync failed:", err);
@@ -128,8 +171,8 @@ export default function App() {
     };
 
     if (gameState.status === 'PLAYING' && user && !isAdmin) {
-      updateHeartbeat();
-      heartbeatInterval = setInterval(updateHeartbeat, 15000); 
+      updateHeartbeat(); 
+      heartbeatInterval = setInterval(updateHeartbeat, 5000); 
     }
 
     return () => {
@@ -160,7 +203,7 @@ export default function App() {
             if (sessionSnap.exists()) {
               const savedData = sessionSnap.data();
               const savedRounds = savedData.rounds || [];
-              const answeredCount = savedRounds.filter((r: any) => r.userChoiceId !== null && r.userChoiceId !== undefined).length;
+              const answeredCount = savedRounds.filter((r: any) => r.userChoiceId !== undefined).length;
               
               totalElapsedSeconds.current = savedData.totalTimeSpent || 0;
               setCurrentRoundIndex(answeredCount < savedRounds.length ? answeredCount : 0);
@@ -174,11 +217,7 @@ export default function App() {
                 loadingProgress: 100
               });
             } else {
-              setGameState(prev => ({
-                ...prev,
-                teamName: nameFromEmail,
-                status: 'IDLE' 
-              }));
+              setGameState(prev => ({ ...prev, teamName: nameFromEmail, status: 'IDLE' }));
             }
           }
         } catch (err) {
@@ -195,7 +234,7 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // --- TRIGGER GAME GENERATION + RANDOMIZATION ---
+  // --- TRIGGER GAME GENERATION ---
   useEffect(() => {
     if (gameState.status === 'GENERATING' && gameState.rounds.length === 0) {
       const loadGame = async () => {
@@ -204,18 +243,10 @@ export default function App() {
             setGameState(prev => ({ ...prev, loadingProgress: progress }));
           });
           
-          // --- RANDOMIZATION LOGIC ---
-          const shuffledRounds = [...generatedRounds].sort(() => Math.random() - 0.5);
-          const randomizedRounds = shuffledRounds.map((round: any, index: number) => ({
-            ...round,
-            id: index + 1,
-            images: [...round.images].sort(() => Math.random() - 0.5)
-          }));
-
           setGameState(prev => ({
             ...prev,
             status: 'PLAYING',
-            rounds: randomizedRounds,
+            rounds: generatedRounds,
             loadingProgress: 100
           }));
           setCurrentRoundIndex(0);
@@ -237,19 +268,16 @@ export default function App() {
   const handleLogin = async (usernameInput: string, passwordInput: string) => {
     setLoginError(undefined); 
     const email = `${usernameInput.trim()}@acm.com`;
-    
     try {
       await signInWithEmailAndPassword(auth, email, passwordInput);
     } catch (error) {
-      console.error("Login failed:", error);
       setLoginError("INVALID_CREDENTIALS"); 
     }
   };
 
   const handleLogout = useCallback(async () => {
-    if (window.confirm("Terminate session and return to terminal?")) {
+    if (window.confirm("Logout of terminal? Current progress will be saved in the dashboard.")) {
       try {
-        if (user && !isAdmin) await deleteDoc(doc(db, "active_sessions", user.uid)).catch(()=>{});
         await signOut(auth);
         setGameState({
           status: 'LOGIN',
@@ -265,7 +293,7 @@ export default function App() {
         console.error("Logout failed:", error);
       }
     }
-  }, [user, isAdmin]);
+  }, []);
 
   const startGame = useCallback(() => {
     if (user) {
@@ -304,9 +332,9 @@ export default function App() {
 
   // UI Helpers
   const currentRound = gameState.rounds[currentRoundIndex];
-  const isCurrentRoundAnswered = currentRound?.userChoiceId !== null && currentRound?.userChoiceId !== undefined;
+  const isCurrentRoundAnswered = currentRound?.userChoiceId !== undefined && currentRound?.userChoiceId !== null;
   const isLastRound = currentRoundIndex === gameState.rounds.length - 1;
-  const completedRounds = gameState.rounds.filter(r => r.userChoiceId !== null).length;
+  const completedRounds = gameState.rounds.filter(r => r.userChoiceId !== undefined).length;
 
   // --- VIEW ROUTING ---
   if (loading) return <LoadingScreen progress={0} />;
@@ -340,25 +368,21 @@ export default function App() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden bg-[#13111C]">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#FF00E6] rounded-full mix-blend-multiply filter blur-[150px] opacity-10 animate-pulse"></div>
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[#00FF9D] rounded-full mix-blend-multiply filter blur-[150px] opacity-10 animate-pulse" style={{animationDelay: '1s'}}></div>
-        <div className="relative z-10 flex flex-col items-center w-full max-w-4xl animate-in zoom-in duration-300">
+        <div className="relative z-10 flex flex-col items-center w-full max-w-4xl animate-in zoom-in duration-300 text-center">
            <div className="mb-10 transform -rotate-1">
              <div className="bg-[#00FF9D] text-black border-2 border-[#00FF9D] px-6 py-2 font-mono text-sm font-bold uppercase tracking-widest shadow-[6px_6px_0px_rgba(0,0,0,1)]">
                 // SYSTEM DIAGNOSTIC COMPLETE
              </div>
            </div>
-           <div className="text-center mb-6">
-              <h1 className="text-4xl md:text-6xl font-heading leading-none text-white retro-text-shadow select-none uppercase max-w-3xl">
-                Results will be announced soon!!
-              </h1>
-           </div>
-           <div className="mb-16 text-center">
-              <p className="text-2xl md:text-3xl font-heading uppercase tracking-[0.2em] text-yellow-400">
-                Response has been recorded
-              </p>
-           </div>
+           <h1 className="text-4xl md:text-6xl font-heading leading-none text-white retro-text-shadow uppercase mb-6">
+             Uplink Successful
+           </h1>
+           <p className="text-2xl md:text-3xl font-heading uppercase tracking-[0.2em] text-yellow-400 mb-16">
+             Attempt Saved to History
+           </p>
            <button onClick={resetGame} className="group relative inline-flex items-center gap-4 px-12 py-6 bg-[#FF00E6] text-white font-heading text-2xl uppercase tracking-widest hover:bg-[#d900c4] hover:scale-105 transition-all duration-300 shadow-[0_0_30px_rgba(255,46,230,0.3)]">
-             <RotateCcw className="w-8 h-8 group-hover:-rotate-180 transition-transform duration-700" />
-             <span>Reboot System</span>
+             <RotateCcw className="w-8 h-8 group-hover:-rotate-180 transition-transform" />
+             <span>Back to main page</span>
              <ArrowRight className="w-8 h-8 group-hover:translate-x-2 transition-transform" />
            </button>
         </div>
@@ -368,38 +392,37 @@ export default function App() {
 
   if (gameState.status === 'IDLE') {
     return (
-      <div className="min-h-screen flex flex-col relative overflow-hidden">
+      <div className="min-h-screen flex flex-col relative overflow-hidden bg-black">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#FF00E6] rounded-full mix-blend-multiply filter blur-[150px] opacity-20 animate-pulse"></div>
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[#00FF9D] rounded-full mix-blend-multiply filter blur-[150px] opacity-20 animate-pulse" style={{animationDelay: '1s'}}></div>
         <main className="flex-1 flex flex-col items-center justify-center p-6 z-10 text-center relative">
           <div className="mb-8 transform -rotate-2">
-            <span className="bg-black text-[#00FF9D] border-2 border-[#00FF9D] px-4 py-2 font-mono text-sm uppercase tracking-widest shadow-[4px_4px_0px_#00FF9D]">v 1.1.0 // ACM SigAI Chapter</span>
+            <span className="bg-black text-[#00FF9D] border-2 border-[#00FF9D] px-4 py-2 font-mono text-sm uppercase tracking-widest shadow-[4px_4px_0px_#00FF9D]">v 1.2.0 // ACM SigAI Chapter</span>
           </div>
-          <h1 className="text-6xl md:text-8xl font-heading mb-6 leading-none retro-text-shadow text-white">REAL<br/><span className="text-[#FF00E6]">VS</span><br/>ARTIFICIAL</h1>
-          <div className="max-w-xl mx-auto mb-12 bg-black/50 p-6 border-l-4 border-[#00FF9D] backdrop-blur-sm">
+          <h1 className="text-6xl md:text-8xl font-heading mb-6 leading-none retro-text-shadow text-white uppercase">REAL<br/><span className="text-[#FF00E6]">VS</span><br/>ARTIFICIAL</h1>
+          <div className="max-w-xl mx-auto mb-12 bg-black/50 p-6 border-l-4 border-[#00FF9D] backdrop-blur-sm text-left">
             <p className="text-lg md:text-xl text-gray-200 leading-relaxed font-mono">Identify the <span className="text-[#00FF9D] font-bold">AI IMPOSTOR</span>.<br/>Distinguish hallucinations from <span className="text-[#FF00E6] font-bold">HUMAN SOUL</span>.</p>
           </div>
           <button onClick={startGame} className="group game-btn relative inline-flex items-center gap-4 px-12 py-6 bg-[#FF00E6] text-white font-heading text-2xl uppercase tracking-widest hover:bg-[#d900c4]">
-            <Zap className="w-8 h-8 fill-current" /> Initialize <ArrowRight className="w-8 h-8 group-hover:translate-x-2 transition-transform" />
+            <Zap className="w-8 h-8 fill-current" /> Initialize Sequence <ArrowRight className="w-8 h-8 group-hover:translate-x-2 transition-transform" />
           </button>
         </main>
       </div>
     );
   }
 
-  // --- PLAYING VIEW ---
   return (
-    <div className="min-h-screen text-white custom-scrollbar flex flex-col">
+    <div className="min-h-screen text-white custom-scrollbar flex flex-col bg-[#0a0a0c]">
       <header className="sticky top-0 z-50 bg-[#13111C]/95 border-b-4 border-black px-4 py-3 shadow-[0px_4px_20px_rgba(0,0,0,0.5)]">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div onClick={resetGame} className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
                <div className="bg-[#FF00E6] w-8 h-8 flex items-center justify-center border-2 border-black font-bold text-sm shadow-[2px_2px_0px_#000]">R</div>
-               <div className="hidden sm:block"><span className="font-heading text-xl tracking-tighter">REAL<span className="text-[#00FF9D]">VS</span>AI</span></div>
+               <div className="hidden sm:block"><span className="font-heading text-xl tracking-tighter uppercase">REAL<span className="text-[#00FF9D]">VS</span>AI</span></div>
             </div>
             <button 
               onClick={handleLogout}
-              className="flex items-center gap-2 bg-[#1F1B2E] hover:bg-[#FF2E2E] text-gray-400 hover:text-white px-3 py-1.5 rounded border border-gray-700 hover:border-black transition-all group active:scale-95"
+              className="flex items-center gap-2 bg-[#1F1B2E] hover:bg-[#FF2E2E] text-gray-400 hover:text-white px-3 py-1.5 rounded border border-gray-700 transition-all group active:scale-95"
             >
               <LogOut size={14} />
               <span className="text-[10px] font-mono font-bold uppercase tracking-tighter">Logout</span>
@@ -407,7 +430,6 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4 sm:gap-8">
-             {/* 5-SEC PER ROUND TIMER DISPLAY */}
              <div className={`flex items-center gap-2 border px-3 py-1.5 rounded ${roundTimeLeft <= 2 ? 'border-red-500 bg-red-500/10' : 'border-[#FF00E6]/30 bg-black/40'}`}>
                 <Timer size={16} className={roundTimeLeft <= 2 ? 'text-red-500 animate-pulse' : 'text-[#FF00E6]'} />
                 <span className={`font-mono text-lg font-bold tracking-widest ${roundTimeLeft <= 2 ? 'text-red-500' : 'text-white'}`}>
@@ -421,18 +443,13 @@ export default function App() {
                    <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300" 
                         style={{ width: `${(completedRounds / gameState.rounds.length) * 100}%` }}></div>
                 </div>
-                <span className="text-[9px] mt-1 text-gray-500 font-mono">ROUND {currentRoundIndex + 1} / {gameState.rounds.length}</span>
+                <span className="text-[9px] mt-1 text-gray-500 font-mono uppercase">ROUND {currentRoundIndex + 1} / {gameState.rounds.length}</span>
              </div>
           </div>
         </div>
       </header>
       
-      <div className="container mx-auto px-4 py-8 flex-1 flex flex-col justify-center">
-        <div className="text-center mb-8">
-           <div className="inline-block border-2 border-[#00FF9D] text-[#00FF9D] px-4 py-1 font-mono text-xs uppercase mb-2 bg-[#00FF9D]/10">Current Objective</div>
-           <h2 className="text-3xl md:text-4xl font-heading text-white uppercase retro-text-shadow">Locate the AI Image</h2>
-        </div>
-        
+      <main className="container mx-auto px-4 py-8 flex-1 flex flex-col justify-center">
         <div className="max-w-4xl mx-auto w-full mb-24">
           {currentRound && (
              <div className="animate-in fade-in slide-in-from-right-8 duration-500" key={currentRound.id}>
@@ -443,7 +460,7 @@ export default function App() {
              </div>
           )}
         </div>
-      </div>
+      </main>
       
       <div className="fixed bottom-0 left-0 w-full p-6 bg-gradient-to-t from-[#13111C] via-[#13111C]/95 to-transparent z-40 border-t border-white/5 backdrop-blur-sm">
         <div className="container mx-auto flex justify-center">
