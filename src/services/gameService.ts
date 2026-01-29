@@ -52,7 +52,26 @@ import runnerREAL from "../images/runnerREAL.jpg";
 import tigerAI from "../images/tigerAI.png";
 import tigerREAL from "../images/tigerREAL.jpg";
 
-
+import blueberriesAI from "../images/blueberriesAI.png";
+import blueberriesREAL from "../images/blueberriesREAL.png";
+import bullAI from "../images/bullAI.png";
+import bullREAL from "../images/bullREAL.png";
+import cakeAI from "../images/cakeAI.png";
+import cakeREAL from "../images/cakeREAL.png";
+import classAI from "../images/classAI.png";
+import cutcakeREAL from "../images/cutcakeREAL.png";
+import eyeAI from "../images/eyeAI.png";
+import eyeREAL from "../images/eyeREAL.png";
+import kittyAI from "../images/kittyAI.png";
+import leavesREAL from "../images/leavesREAL.png";
+import leavesAI from "../images/leavesAI.png";
+import ramenREAL from "../images/ramenREAL.png";
+import ramenAI from "../images/ramenAI.png";
+import shedREAL from "../images/shedREAL.png";
+import trailAI from "../images/trailAI.png";
+import trailREAL from "../images/trailREAL.png";
+import turtleAI from "../images/turtleAI.png";
+import turtleREAL from "../images/turtleREAL.png";
 
  
     
@@ -230,6 +249,81 @@ const STATIC_DATA = [
     images: [
       { url: tigerAI, type: 'AI' },
       { url: tigerREAL, type: 'DESIGN' }
+    ]
+  },
+  {
+    subject: "Blueberries",
+    images: [
+      { url: blueberriesREAL, type: "AI" },
+      { url: blueberriesAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Bull",
+    images: [
+      { url: bullREAL, type: "AI" },
+      { url: bullAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Cake",
+    images: [
+      { url: cakeREAL, type: "AI" },
+      { url: cakeAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Classroom",
+    images: [
+      { url: cutcakeREAL, type: "AI" },
+      { url: classAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Eye",
+    images: [
+      { url: eyeREAL, type: "AI" },
+      { url: eyeAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Kitten",
+    images: [
+      { url: kittyAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Leaves",
+    images: [
+      { url: leavesREAL, type: "AI" },
+      { url: leavesAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Ramen",
+    images: [
+      { url: ramenREAL, type: "AI" },
+      { url: ramenAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Shed",
+    images: [
+      { url: shedREAL, type: "AI" }
+    ]
+  },
+  {
+    subject: "Trail",
+    images: [
+      { url: trailREAL, type: "AI" },
+      { url: trailAI, type: "DESIGN" }
+    ]
+  },
+  {
+    subject: "Turtle",
+    images: [
+      { url: turtleREAL, type: "AI" },
+      { url: turtleAI, type: "DESIGN" }
     ]
   }
 
