@@ -14,7 +14,7 @@ import {
 import { 
   LogOut, Search, Database, AlertTriangle,
   Radio, Trash2, ShieldCheck, Lock, Unlock,
-  ArrowLeft, CheckCircle2, XCircle, MinusCircle, Eye, Clock, Filter, Download, ArrowUpDown
+  ArrowLeft, CheckCircle2, XCircle, MinusCircle, Eye, Clock, Filter, Download, ArrowUpDown, Loader2
 } from 'lucide-react';
 
 interface PlayerData {
@@ -45,37 +45,68 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
   const [players, setPlayers] = useState<PlayerData[]>([]);
   const [activeUsers, setActiveUsers] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<PlayerData | null>(null);
   
-  // MODIFIED: Added score_only and time_only to the sort states
   const [filterDuplicates, setFilterDuplicates] = useState(false);
   const [sortBy, setSortBy] = useState<'performance' | 'score_only' | 'time_only' | 'recent'>('performance');
 
   // --- HANDLERS ---
-  const handleDelete = async (docId: string, name: string) => {
-    const confirmed = window.confirm(`CRITICAL_ACTION: Purge unique log [${docId}] for [${name}]?`);
+  
+  /**
+   * REFINED DELETE: 
+   * Checks player status to delete from correct collection.
+   * This handles both finished logs and live user progress.
+   */
+  const handleDelete = async (player: PlayerData) => {
+    const type = player.status === 'LIVE' ? "ACTIVE_SESSION" : "FINAL_LOG";
+    const confirmed = window.confirm(`CRITICAL_ACTION: Purge ${type} for [${player.name}]?`);
+    
     if (confirmed) {
+      setIsProcessing(true);
       try {
-        await deleteDoc(doc(db, "submissions", docId));
+        // Direct target based on status
+        const collectionPath = player.status === 'LIVE' ? "active_sessions" : "submissions";
+        await deleteDoc(doc(db, collectionPath, player.id));
+        
+        // Clear selection if the deleted agent was being viewed
+        if (selectedAgent?.id === player.id) setSelectedAgent(null);
       } catch (error) {
         console.error("Delete error:", error);
         alert("ACCESS_DENIED: Check Firestore Rules or Admin Role.");
+      } finally {
+        setIsProcessing(false);
       }
     }
   };
 
+  /**
+   * REFINED PURGE ALL:
+   * Clears both the submissions (history) and active_sessions (live progress).
+   */
   const handlePurgeAll = async () => {
-    const confirmed = window.confirm("SYSTEM_WIDE_PURGE: Permanently delete ALL historical logs?");
+    const confirmed = window.confirm("SYSTEM_WIDE_PURGE: Permanently delete ALL logs and current user progress?");
     if (confirmed) {
+      setIsProcessing(true);
       try {
-        const querySnapshot = await getDocs(collection(db, "submissions"));
         const batch = writeBatch(db);
-        querySnapshot.docs.forEach((d) => batch.delete(d.ref));
+
+        // Fetch and queue all submissions
+        const subSnap = await getDocs(collection(db, "submissions"));
+        subSnap.docs.forEach((d) => batch.delete(d.ref));
+
+        // Fetch and queue all active sessions
+        const activeSnap = await getDocs(collection(db, "active_sessions"));
+        activeSnap.docs.forEach((d) => batch.delete(d.ref));
+
         await batch.commit();
-        alert("MAIN_FRAME_CLEARED: All locked entries purged.");
+        alert("MAIN_FRAME_CLEARED: All locked and live entries purged.");
       } catch (error) {
+        console.error("Purge Error:", error);
         alert("ACCESS_DENIED: Batch deletion failed.");
+      } finally {
+        setIsProcessing(false);
       }
     }
   };
@@ -153,14 +184,12 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
     }
   };
 
-  // --- REFINED RANKING & FILTERING LOGIC ---
   const filteredPlayers = useMemo(() => {
     let list = players.filter(p => 
       p.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.name?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    // Sorting Logic Updated
     list.sort((a, b) => {
       if (sortBy === 'performance') {
         if (b.score !== a.score) return b.score - a.score;
@@ -168,7 +197,6 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
       } else if (sortBy === 'score_only') {
         return b.score - a.score;
       } else if (sortBy === 'time_only') {
-        // Handle 0 or undefined time by treating it as a very large number
         const timeA = a.timeTaken && a.timeTaken > 0 ? a.timeTaken : 999999;
         const timeB = b.timeTaken && b.timeTaken > 0 ? b.timeTaken : 999999;
         return timeA - timeB;
@@ -235,7 +263,7 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
                 </div>
                 <div className="text-right">
                     <span className="text-[10px] text-gray-500 block uppercase font-bold tracking-widest">Accuracy</span>
-                    <span className="text-3xl font-heading text-[#00FF9D]">{selectedAgent.score}/6</span>
+                    <span className="text-3xl font-heading text-[#00FF9D]">{selectedAgent.score}/35</span>
                 </div>
               </div>
             </div>
@@ -285,7 +313,14 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
             <h1 className="text-4xl md:text-5xl font-heading uppercase tracking-tighter italic text-white">System<span className="text-[#00FF9D]">_Uplink</span></h1>
           </div>
           <div className="flex items-center flex-wrap gap-3">
-            <button onClick={handlePurgeAll} className="bg-black border-2 border-red-600 text-red-600 px-4 py-2 text-[10px] hover:bg-red-600 hover:text-white transition-all font-black uppercase">Purge_Data</button>
+            <button 
+                onClick={handlePurgeAll} 
+                disabled={isProcessing}
+                className="bg-black border-2 border-red-600 text-red-600 px-4 py-2 text-[10px] hover:bg-red-600 hover:text-white transition-all font-black uppercase flex items-center gap-2 disabled:opacity-50"
+            >
+              {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+              Purge_All
+            </button>
             <button onClick={exportToCSV} className="flex items-center gap-2 bg-black border-2 border-[#00FF9D] text-[#00FF9D] px-4 py-2 text-[10px] hover:bg-[#00FF9D] hover:text-black transition-all font-black uppercase">
               <Download size={14} /> Report
             </button>
@@ -433,7 +468,11 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
                               )}
                             </td>
                             <td className="p-4 text-right">
-                              <button onClick={() => handleDelete(p.id, p.name)} className="p-2 text-gray-600 hover:text-[#FF00E6] transition-all">
+                              <button 
+                                onClick={() => handleDelete(p)} 
+                                disabled={isProcessing}
+                                className="p-2 text-gray-600 hover:text-[#FF00E6] transition-all disabled:opacity-30"
+                              >
                                 <Trash2 size={16} />
                               </button>
                             </td>
