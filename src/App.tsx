@@ -38,7 +38,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
-  const [roundTimeLeft, setRoundTimeLeft] = useState(7);
+  const [roundTimeLeft, setRoundTimeLeft] = useState(5);
   const totalElapsedSeconds = useRef(0);
 
   const [gameState, setGameState] = useState<GameState>({
@@ -89,7 +89,7 @@ export default function App() {
     // MODIFICATION: Only increment if we aren't at the end. Otherwise, finish.
     if (!isAtLastRound) {
       setCurrentRoundIndex(prev => prev + 1);
-      setRoundTimeLeft(7); 
+      setRoundTimeLeft(5); 
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       finishGame(updatedRounds, updatedScore);
@@ -127,7 +127,7 @@ export default function App() {
               } else {
                 setGameState(prevGS => ({ ...prevGS, rounds: newRounds, score: newScore }));
                 setCurrentRoundIndex(idx => idx + 1);
-                return 7; 
+                return 5; 
               }
             }
             
@@ -138,7 +138,7 @@ export default function App() {
               return 0;
             } else {
               setCurrentRoundIndex(idx => idx + 1);
-              return 7;
+              return 5;
             }
           }
           return prev - 1;
@@ -218,7 +218,7 @@ export default function App() {
               // Ensure we don't start out of bounds if they finished
               const startIndex = answeredCount < savedRounds.length ? answeredCount : 0;
               setCurrentRoundIndex(startIndex);
-              setRoundTimeLeft(7);
+              setRoundTimeLeft(5);
 
               setGameState({
                 status: 'IDLE', 
@@ -261,7 +261,7 @@ export default function App() {
             loadingProgress: 100
           }));
           setCurrentRoundIndex(0);
-          setRoundTimeLeft(7);
+          setRoundTimeLeft(5);
           totalElapsedSeconds.current = 0;
         } catch (err) {
           console.error("Game gen failed:", err);
@@ -298,7 +298,7 @@ export default function App() {
           teamName: 'Guest Agent'
         });
         setCurrentRoundIndex(0); 
-        setRoundTimeLeft(7);
+        setRoundTimeLeft(5);
         totalElapsedSeconds.current = 0;
       } catch (error) {
         console.error("Logout failed:", error);
@@ -339,7 +339,7 @@ export default function App() {
       score: 0
     }));
     setCurrentRoundIndex(0); 
-    setRoundTimeLeft(7);
+    setRoundTimeLeft(5);
     totalElapsedSeconds.current = 0;
   }, []);
 
