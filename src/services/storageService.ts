@@ -4,12 +4,10 @@ import {
   addDoc, 
   serverTimestamp, 
   doc, 
-  setDoc,
   getDoc,
   getDocs,
   query,
-  where,
-  deleteDoc
+  where
 } from "firebase/firestore";
 
 /**
@@ -25,42 +23,9 @@ const isUserAdmin = async (uid: string) => {
 };
 
 /**
- * SAVE PARTIAL PROGRESS (Live Heartbeat)
- * Updates the 'active_sessions' collection using the UID as the key.
- * This keeps exactly ONE live row per person in the "Live Signals" section.
- */
-export const savePartialProgress = async (rounds: any[], score: number, teamName: string) => {
-  if (!auth.currentUser) return;
-
-  try {
-    const uid = auth.currentUser.uid;
-    // Admins shouldn't clutter the live feed
-    const isAdmin = await isUserAdmin(uid);
-    if (isAdmin) return; 
-
-    const sessionRef = doc(db, "active_sessions", uid);
-    
-    // Progress is the count of rounds where a choice was made
-    const progressCount = rounds.filter(r => r.userChoiceId !== undefined).length;
-
-    await setDoc(sessionRef, {
-      name: teamName,
-      email: auth.currentUser.email,
-      rounds: rounds,          
-      currentScore: score,     
-      progress: progressCount, 
-      lastActive: serverTimestamp(),
-      status: 'LIVE',
-      role: 'player' 
-    }, { merge: true });
-  } catch (e) {
-    console.error("HEARTBEAT_SYNC_ERROR:", e);
-  }
-};
-
-/**
  * SAVE FINAL SCORE (Final Archive)
- * Creates a NEW unique document in 'submissions' every time.
+ * HEARTBEAT / ACTIVE_SESSIONS logic removed to minimize DB overhead.
+ * This function is called only once when the game is completed.
  */
 export const saveScore = async (
   teamName: string, 
@@ -78,9 +43,9 @@ export const saveScore = async (
     const email = auth.currentUser.email;
     const isAdmin = await isUserAdmin(uid);
     
-    // Admins don't get ranked
+    // Admins don't get ranked on the leaderboard
     if (isAdmin) {
-      await deleteDoc(doc(db, "active_sessions", uid)).catch(() => {});
+      console.log("ADMIN_SESSION: Result not recorded to leaderboard.");
       return;
     }
 
@@ -91,7 +56,7 @@ export const saveScore = async (
     const attemptNumber = querySnapshot.size + 1; 
 
     // 1. Permanent Archive Entry (UNIQUE DOCUMENT)
-    // Using addDoc() instead of setDoc() prevents overwriting.
+    // We only write to 'submissions' now.
     await addDoc(collection(db, "submissions"), {
       uid: uid,
       name: teamName,
@@ -100,19 +65,14 @@ export const saveScore = async (
       timeTaken: timeTaken || 0,
       rounds: rounds, 
       attempt: attemptNumber, 
-      timestamp: serverTimestamp(), // Dashboard uses this for sorting
+      timestamp: serverTimestamp(),
       status: 'LOCKED',
       role: 'player'
     });
 
-    // 2. Clear Active Session
-    // Deleting the UID-based session allows the user to start a fresh game
-    // without seeing their old "In Progress" results.
-    await deleteDoc(doc(db, "active_sessions", uid));
-
     console.log(`UPLINK_SUCCESS: Locked Attempt #${attemptNumber} for ${email}. Score: ${score}`);
   } catch (e) {
     console.error("DATABASE_CRITICAL_ERROR:", e);
-    throw e; // Pass to App.tsx so it can handle UI error states
+    throw e; 
   }
 };

@@ -43,7 +43,6 @@ interface ActiveSession {
 
 export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
   const [players, setPlayers] = useState<PlayerData[]>([]);
-  const [activeUsers, setActiveUsers] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,21 +55,17 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
   
   /**
    * REFINED DELETE: 
-   * Checks player status to delete from correct collection.
-   * This handles both finished logs and live user progress.
+   * Updated to only target submissions since active_sessions tracking is removed.
    */
   const handleDelete = async (player: PlayerData) => {
-    const type = player.status === 'LIVE' ? "ACTIVE_SESSION" : "FINAL_LOG";
-    const confirmed = window.confirm(`CRITICAL_ACTION: Purge ${type} for [${player.name}]?`);
+    const confirmed = window.confirm(`CRITICAL_ACTION: Purge FINAL_LOG for [${player.name}]?`);
     
     if (confirmed) {
       setIsProcessing(true);
       try {
-        // Direct target based on status
-        const collectionPath = player.status === 'LIVE' ? "active_sessions" : "submissions";
-        await deleteDoc(doc(db, collectionPath, player.id));
+        // Direct target to submissions (Final Logs)
+        await deleteDoc(doc(db, "submissions", player.id));
         
-        // Clear selection if the deleted agent was being viewed
         if (selectedAgent?.id === player.id) setSelectedAgent(null);
       } catch (error) {
         console.error("Delete error:", error);
@@ -83,25 +78,21 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
 
   /**
    * REFINED PURGE ALL:
-   * Clears both the submissions (history) and active_sessions (live progress).
+   * Clears submissions history only to save on database overhead.
    */
   const handlePurgeAll = async () => {
-    const confirmed = window.confirm("SYSTEM_WIDE_PURGE: Permanently delete ALL logs and current user progress?");
+    const confirmed = window.confirm("SYSTEM_WIDE_PURGE: Permanently delete ALL logs?");
     if (confirmed) {
       setIsProcessing(true);
       try {
         const batch = writeBatch(db);
 
-        // Fetch and queue all submissions
+        // Fetch and queue all submissions for deletion
         const subSnap = await getDocs(collection(db, "submissions"));
         subSnap.docs.forEach((d) => batch.delete(d.ref));
 
-        // Fetch and queue all active sessions
-        const activeSnap = await getDocs(collection(db, "active_sessions"));
-        activeSnap.docs.forEach((d) => batch.delete(d.ref));
-
         await batch.commit();
-        alert("MAIN_FRAME_CLEARED: All locked and live entries purged.");
+        alert("MAIN_FRAME_CLEARED: All entries purged.");
       } catch (error) {
         console.error("Purge Error:", error);
         alert("ACCESS_DENIED: Batch deletion failed.");
@@ -112,61 +103,28 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
   };
 
   useEffect(() => {
-    let submissions: PlayerData[] = [];
-    let actives: ActiveSession[] = [];
-
-    const syncLeaderboard = () => {
-      const finished = submissions.filter(p => p.role !== 'admin').map(p => ({
-        ...p,
-        status: 'LOCKED' as const
-      }));
-
-      const currentlyPlaying = actives.filter(u => u.role !== 'admin').map(u => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        score: u.currentScore || 0,
-        timestamp: u.lastActive,
-        status: 'LIVE' as const,
-        timeTaken: u.totalTimeSpent || 0,
-        rounds: u.rounds || []
-      }));
-
-      setPlayers([...finished, ...currentlyPlaying]);
-    };
-
+    // Only listening to 'submissions' collection. 
+    // The heartbeat logic for 'active_sessions' has been fully removed.
     const unsubSubmissions = onSnapshot(collection(db, "submissions"), (snap) => {
-      submissions = snap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as PlayerData))
+      const submissions = snap.docs
+        .map(doc => ({ 
+            id: doc.id, 
+            ...doc.data(),
+            status: 'LOCKED' as const // Data from submissions is final/locked
+        } as PlayerData))
         .filter(data => data.role !== 'admin');
-      syncLeaderboard();
+      
+      setPlayers(submissions);
       setLoading(false);
     });
 
-    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-    const qActive = query(
-      collection(db, "active_sessions"), 
-      where("lastActive", ">", Timestamp.fromDate(tenMinsAgo))
-    );
-    
-    const unsubActive = onSnapshot(qActive, (snap) => {
-      actives = snap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as ActiveSession))
-        .filter(data => data.role !== 'admin');
-      
-      setActiveUsers(actives);
-      syncLeaderboard();
-    });
-
-    return () => { unsubSubmissions(); unsubActive(); };
+    return () => unsubSubmissions();
   }, []);
 
   const duplicateEmails = useMemo(() => {
     const counts = new Map<string, number>();
     players.forEach(p => {
-      if (p.status === 'LOCKED') {
-        counts.set(p.email, (counts.get(p.email) || 0) + 1);
-      }
+      counts.set(p.email, (counts.get(p.email) || 0) + 1);
     });
     return new Set(Array.from(counts.entries()).filter(([_, count]) => count > 1).map(([email]) => email));
   }, [players]);
@@ -333,23 +291,13 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <aside className="lg:col-span-1 space-y-6">
             <div className="bg-[#13111C] border-4 border-black p-5 shadow-[6px_6px_0px_rgba(0,0,0,0.5)]">
-              <h2 className="text-xs font-black uppercase tracking-widest text-[#00FF9D] mb-4 flex items-center gap-2">
-                <Radio size={14} className="animate-pulse" /> Live_Signals [{activeUsers.length}]
+              <h2 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-4 flex items-center gap-2">
+                <Radio size={14} /> Live_Signals [OFFLINE]
               </h2>
-              <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                {activeUsers.length === 0 ? (
-                  <p className="text-[10px] text-gray-600 uppercase italic py-4 font-bold tracking-widest">Scanning_Frequencies...</p>
-                ) : (
-                  activeUsers.map(u => (
-                    <div key={u.id} className="border-l-2 border-[#00FF9D] pl-3 py-2 bg-white/5 flex justify-between items-center group cursor-pointer hover:bg-white/10 transition-all" onClick={() => setSelectedAgent(players.find(p => p.id === u.id) || null)}>
-                      <div className="truncate pr-2">
-                        <p className="text-xs font-black text-white uppercase truncate tracking-tight">{u.name}</p>
-                        <p className="text-[9px] text-gray-500 font-mono">Realtime_Feed...</p>
-                      </div>
-                      <div className="h-2 w-2 rounded-full bg-[#00FF9D] animate-ping" />
-                    </div>
-                  ))
-                )}
+              <div className="space-y-3 pr-2">
+                <p className="text-[10px] text-gray-600 uppercase italic py-4 font-bold tracking-widest leading-tight">
+                  REAL-TIME TRACKING DISABLED TO REDUCE DATABASE OVERHEAD.
+                </p>
               </div>
             </div>
 
@@ -440,7 +388,7 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
                             </td>
                             <td className="p-4 text-center">
                               <span className={`px-4 py-1 font-heading text-xl border-2 tracking-tighter ${p.score >= 5 ? 'border-[#00FF9D] text-[#00FF9D] bg-[#00FF9D]/10' : 'border-gray-800 text-gray-500 bg-black/40'}`}>
-                                {p.score}/6
+                                {p.score}/35
                               </span>
                             </td>
                             <td className="p-4 text-center font-black">
@@ -451,11 +399,9 @@ export default function AdminDashboard({ onExit }: { onExit?: () => void }) {
                             </td>
                             <td className="p-4 text-center">
                               <div className="flex flex-col items-center gap-1">
-                                {p.status === 'LIVE' ? (
-                                  <span className="text-yellow-500 text-[10px] font-black uppercase flex items-center gap-1"><Unlock size={10} className="animate-pulse" /> Live</span>
-                                ) : (
-                                  <span className="text-gray-400 text-[10px] font-bold flex items-center gap-1"> {p.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                )}
+                                <span className="text-gray-400 text-[10px] font-bold flex items-center gap-1"> 
+                                  {p.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </span>
                               </div>
                             </td>
                             <td className="p-4 text-center">

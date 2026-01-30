@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { generateGameRounds } from './services/gameService';
-import { saveScore, savePartialProgress } from './services/storageService'; 
 import { GameState } from '../types';
 import { LoadingScreen } from './components/LoadingScreen';
 import { RoundCard } from './components/RoundCard';
@@ -17,8 +16,6 @@ import { auth, db } from "./firebase";
 import { 
   doc, 
   getDoc, 
-  setDoc, 
-  deleteDoc, 
   collection,
   addDoc,
   serverTimestamp 
@@ -50,15 +47,14 @@ export default function App() {
   });
   const [loginError, setLoginError] = useState<string | undefined>(undefined);
 
-  // --- GAME FINISH LOGIC (Uplink to History) ---
+  // --- GAME FINISH LOGIC (Final Log Only) ---
   const finishGame = useCallback(async (finalRounds?: any[], finalScore?: number) => {
     if (!user) return;
     
-    // Set status to FINISHED immediately to clear the game UI and show success screen
     setGameState(prev => ({ ...prev, status: 'FINISHED' }));
 
     try {
-      // 1. Save to unique document in 'submissions' for history tracking
+      // Save to 'submissions' ONLY at the very end.
       await addDoc(collection(db, "submissions"), {
         uid: user.uid,
         name: gameState.teamName,
@@ -71,10 +67,7 @@ export default function App() {
         role: 'player'
       });
 
-      // 2. Clear the active session (Heartbeat cleanup)
-      const sessionDocRef = doc(db, "active_sessions", user.uid);
-      await deleteDoc(sessionDocRef);
-
+      // Session cleanup of active_sessions is no longer needed as we don't write to it.
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error("Critical submission failure:", err);
@@ -86,7 +79,6 @@ export default function App() {
     const roundsRef = updatedRounds || gameState.rounds;
     const isAtLastRound = currentRoundIndex >= roundsRef.length - 1;
     
-    // MODIFICATION: Only increment if we aren't at the end. Otherwise, finish.
     if (!isAtLastRound) {
       setCurrentRoundIndex(prev => prev + 1);
       setRoundTimeLeft(7); 
@@ -96,7 +88,7 @@ export default function App() {
     }
   }, [currentRoundIndex, gameState.rounds, finishGame]);
 
-  // --- TIMER LOGIC (Per Round + Final Transition Fix) ---
+  // --- TIMER LOGIC (Per Round) ---
   useEffect(() => {
     let timerId: any;
 
@@ -109,7 +101,6 @@ export default function App() {
             const currentRound = gameState.rounds[currentRoundIndex];
             const isAtLastRound = currentRoundIndex >= gameState.rounds.length - 1;
             
-            // Scenario A: Round has NOT been answered yet (Time Ran Out)
             if (currentRound && (currentRound.userChoiceId === undefined || currentRound.userChoiceId === null)) {
               const newRounds = [...gameState.rounds];
               newRounds[currentRoundIndex] = { 
@@ -119,7 +110,6 @@ export default function App() {
               };
               
               const newScore = newRounds.filter(r => r.isCorrect).length;
-              savePartialProgress(newRounds, newScore, gameState.teamName);
 
               if (isAtLastRound) {
                 finishGame(newRounds, newScore);
@@ -127,18 +117,16 @@ export default function App() {
               } else {
                 setGameState(prevGS => ({ ...prevGS, rounds: newRounds, score: newScore }));
                 setCurrentRoundIndex(idx => idx + 1);
-                return 5; 
+                return 7; // Reset to 7 for next round
               }
             }
             
-            // Scenario B: Round was already answered, timer just hit zero
-            // MODIFICATION: Check if last round to prevent extra index increment
             if (isAtLastRound) {
               finishGame();
               return 0;
             } else {
               setCurrentRoundIndex(idx => idx + 1);
-              return 5;
+              return 7; // Reset to 7 for next round
             }
           }
           return prev - 1;
@@ -149,45 +137,7 @@ export default function App() {
     return () => {
       if (timerId) clearInterval(timerId);
     };
-  }, [gameState.status, currentRoundIndex, gameState.rounds, finishGame, gameState.teamName]);
-
-
-  // --- HEARTBEAT SYSTEM (Live Uplink) ---
-  useEffect(() => {
-    let heartbeatInterval: any;
-
-    const updateHeartbeat = async () => {
-      if (user && !isAdmin && gameState.status === 'PLAYING') {
-        try {
-          const sessionRef = doc(db, "active_sessions", user.uid);
-          const progressCount = gameState.rounds.filter(r => r.userChoiceId !== undefined).length;
-
-          await setDoc(sessionRef, {
-            name: gameState.teamName,
-            email: user.email,
-            lastActive: serverTimestamp(),
-            currentScore: gameState.score,
-            progress: progressCount,
-            rounds: gameState.rounds,
-            totalTimeSpent: totalElapsedSeconds.current,
-            status: 'LIVE',
-            role: 'player'
-          }, { merge: true });
-        } catch (err) {
-          console.error("Heartbeat sync failed:", err);
-        }
-      }
-    };
-
-    if (gameState.status === 'PLAYING' && user && !isAdmin) {
-      updateHeartbeat(); 
-      heartbeatInterval = setInterval(updateHeartbeat, 5000); 
-    }
-
-    return () => {
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
-    };
-  }, [gameState.status, user, isAdmin, gameState.teamName, gameState.score, gameState.rounds]);
+  }, [gameState.status, currentRoundIndex, gameState.rounds, finishGame]);
 
 
   // --- AUTH & PERSISTENCE ---
@@ -206,30 +156,8 @@ export default function App() {
           if (roleIsAdmin) {
             setGameState(prev => ({ ...prev, teamName: nameFromEmail, status: 'ADMIN' }));
           } else {
-            const sessionRef = doc(db, "active_sessions", currentUser.uid);
-            const sessionSnap = await getDoc(sessionRef);
-
-            if (sessionSnap.exists()) {
-              const savedData = sessionSnap.data();
-              const savedRounds = savedData.rounds || [];
-              const answeredCount = savedRounds.filter((r: any) => r.userChoiceId !== undefined).length;
-              
-              totalElapsedSeconds.current = savedData.totalTimeSpent || 0;
-              // Ensure we don't start out of bounds if they finished
-              const startIndex = answeredCount < savedRounds.length ? answeredCount : 0;
-              setCurrentRoundIndex(startIndex);
-              setRoundTimeLeft(7);
-
-              setGameState({
-                status: 'IDLE', 
-                teamName: nameFromEmail,
-                rounds: savedRounds,
-                score: savedData.currentScore || 0,
-                loadingProgress: 100
-              });
-            } else {
-              setGameState(prev => ({ ...prev, teamName: nameFromEmail, status: 'IDLE' }));
-            }
+            // HEARTBEAT RECOVERY REMOVED: Games start fresh on reload to save DB hits
+            setGameState(prev => ({ ...prev, teamName: nameFromEmail, status: 'IDLE' }));
           }
         } catch (err) {
           console.error("Initialization failed:", err);
@@ -287,7 +215,7 @@ export default function App() {
   };
 
   const handleLogout = useCallback(async () => {
-    if (window.confirm("Logout of terminal? Current progress will be saved in the dashboard.")) {
+    if (window.confirm("Logout of terminal?")) {
       try {
         await signOut(auth);
         setGameState({
@@ -314,8 +242,6 @@ export default function App() {
     }
   }, [user, isAdmin]);
 
-  // MODIFICATION: Selection update logic allows overwriting previous choice 
-  // until the round is officially committed by timer or next button.
   const handleSelection = useCallback((roundId: number, imageId: string) => {
     setGameState(prev => {
       const newRounds = prev.rounds.map(round => {
@@ -326,7 +252,7 @@ export default function App() {
       });
       
       const currentScore = newRounds.filter(r => r.isCorrect).length;
-      savePartialProgress(newRounds, currentScore, prev.teamName);
+      // savePartialProgress call removed to prevent database heartbeat
       return { ...prev, rounds: newRounds, score: currentScore };
     });
   }, []);
@@ -343,13 +269,11 @@ export default function App() {
     totalElapsedSeconds.current = 0;
   }, []);
 
-  // UI Helpers
   const currentRound = gameState.rounds[currentRoundIndex];
   const isCurrentRoundAnswered = currentRound?.userChoiceId !== undefined && currentRound?.userChoiceId !== null;
   const isLastRound = currentRoundIndex === gameState.rounds.length - 1;
   const completedRounds = gameState.rounds.filter(r => r.userChoiceId !== undefined).length;
 
-  // --- VIEW ROUTING ---
   if (loading) return <LoadingScreen progress={0} />;
   
   if (gameState.status === 'LOGIN') {
