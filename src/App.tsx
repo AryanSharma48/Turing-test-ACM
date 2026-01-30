@@ -35,7 +35,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
-  const [roundTimeLeft, setRoundTimeLeft] = useState(7);
+  const [roundTimeLeft, setRoundTimeLeft] = useState(5);
   const totalElapsedSeconds = useRef(0);
 
   const [gameState, setGameState] = useState<GameState>({
@@ -81,7 +81,7 @@ export default function App() {
     
     if (!isAtLastRound) {
       setCurrentRoundIndex(prev => prev + 1);
-      setRoundTimeLeft(7); 
+      setRoundTimeLeft(5); 
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       finishGame(updatedRounds, updatedScore);
@@ -111,13 +111,13 @@ export default function App() {
               
               const newScore = newRounds.filter(r => r.isCorrect).length;
 
-              if (isAtLastRound) {
+                if (isAtLastRound) {
                 finishGame(newRounds, newScore);
                 return 0; 
               } else {
                 setGameState(prevGS => ({ ...prevGS, rounds: newRounds, score: newScore }));
                 setCurrentRoundIndex(idx => idx + 1);
-                return 7; // Reset to 7 for next round
+                return 5; // Reset to 5 for next round
               }
             }
             
@@ -126,7 +126,7 @@ export default function App() {
               return 0;
             } else {
               setCurrentRoundIndex(idx => idx + 1);
-              return 7; // Reset to 7 for next round
+              return 5; // Reset to 5 for next round
             }
           }
           return prev - 1;
@@ -189,7 +189,7 @@ export default function App() {
             loadingProgress: 100
           }));
           setCurrentRoundIndex(0);
-          setRoundTimeLeft(7);
+          setRoundTimeLeft(5);
           totalElapsedSeconds.current = 0;
         } catch (err) {
           console.error("Game gen failed:", err);
@@ -226,7 +226,7 @@ export default function App() {
           teamName: 'Guest Agent'
         });
         setCurrentRoundIndex(0); 
-        setRoundTimeLeft(7);
+        setRoundTimeLeft(5);
         totalElapsedSeconds.current = 0;
       } catch (error) {
         console.error("Logout failed:", error);
@@ -265,7 +265,7 @@ export default function App() {
       score: 0
     }));
     setCurrentRoundIndex(0); 
-    setRoundTimeLeft(7);
+    setRoundTimeLeft(5);
     totalElapsedSeconds.current = 0;
   }, []);
 
